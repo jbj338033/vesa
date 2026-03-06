@@ -72,7 +72,7 @@ Prefix with `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, or `chore:` as appro
 When reporting a bug, please include:
 
 - Operating system and version
-- Vesa version (`vesa-cli --version` or check `Cargo.toml`)
+- Vesa version (check `Cargo.toml`)
 - Steps to reproduce
 - Expected behavior
 - Actual behavior

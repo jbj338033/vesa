@@ -15,7 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom binary protocol (max 21 bytes per message)
 - Self-signed certificate generation (trust-on-first-use)
 - TOML configuration file support
-- CLI binary with server/client subcommands
 - Tauri v2 GUI with Svelte 5 frontend
-- System tray integration
+- Menu-bar only app (no Dock icon, tray icon toggle)
+- Display Arrangement UI for drag-and-snap monitor placement
 - Windows and Linux platform stubs
+
+### Removed
+
+- CLI binary (`vesa-cli`) — Tauri app is the sole interface
+
+### Fixed
+
+- Cursor hide/show now uses single API call instead of per-frame hack (GUI process)

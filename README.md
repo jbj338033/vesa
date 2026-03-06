@@ -10,33 +10,20 @@ A cross-platform software KVM built in Rust. Share your keyboard and mouse acros
 - **Zero-config encryption** — QUIC transport with self-signed certificates (trust-on-first-use)
 - **Low-latency input** — Datagrams for mouse/keyboard events, reliable streams for control messages
 - **Cross-platform** — macOS (CGEventTap), Windows (Low-Level Hooks), Linux (evdev)
-- **Dual interface** — System tray GUI (Tauri + Svelte) and headless CLI
+- **Menu-bar app** — System tray GUI (Tauri + Svelte), no Dock icon
 - **Lightweight protocol** — Custom binary format, max 21 bytes per message
 
 ## Quick Start
-
-### GUI (Tauri)
 
 ```bash
 pnpm install
 pnpm tauri dev
 ```
 
-### CLI
-
-```bash
-# Server (the machine with keyboard/mouse)
-cargo run -p vesa-cli -- server --bind 0.0.0.0:4920
-
-# Client (the machine to control)
-cargo run -p vesa-cli -- client --server 192.168.1.100:4920
-```
-
 ### Build
 
 ```bash
-cargo build --release          # CLI binary
-pnpm tauri build               # GUI app bundle
+pnpm tauri build               # App bundle (.app / .msi / .AppImage)
 ```
 
 ## How It Works
@@ -94,13 +81,12 @@ crates/
 ├── vesa-capture   # Input capture (macOS/Windows/Linux)
 ├── vesa-emulate   # Input injection (macOS/Windows/Linux)
 ├── vesa-net       # QUIC transport (Quinn) + self-signed certs
-├── vesa-core      # Server/client orchestration + config
-└── vesa-cli       # CLI binary (clap)
-src-tauri/         # Tauri v2 backend
+└── vesa-core      # Server/client orchestration + config
+src-tauri/         # Tauri v2 backend (menu-bar app)
 src/               # Svelte 5 frontend
 ```
 
-Dependencies flow left-to-right: `event` ← `proto` ← `net` ← `core` ← `cli` / `tauri`.
+Dependencies flow left-to-right: `event` ← `proto` ← `net` ← `core` ← `tauri`.
 
 ## Platform Support
 
@@ -137,7 +123,6 @@ cargo clippy             # Zero warnings
 | Certificates | rcgen 0.13 |
 | macOS Input | core-graphics 0.25 |
 | GUI | Tauri v2 + Svelte 5 |
-| CLI | clap 4 |
 | Config | TOML |
 
 ## Contributing
