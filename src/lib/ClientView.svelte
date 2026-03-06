@@ -2,22 +2,28 @@
   import { invoke } from "@tauri-apps/api/core";
 
   let serverAddr = $state("");
-  let position = $state("Right");
-  let connected = $state(false);
-  let status = $state("Disconnected");
+  let { connected = $bindable(false) }: { connected?: boolean } = $props();
+  let error = $state("");
 
   async function toggleConnection() {
+    error = "";
     if (connected) {
-      await invoke("stop_client");
-      connected = false;
-      status = "Disconnected";
-    } else {
       try {
-        await invoke("start_client", { serverAddr, position });
-        connected = true;
-        status = `Connected to ${serverAddr}`;
+        await invoke("stop_client");
+        connected = false;
       } catch (e) {
-        status = `Failed: ${e}`;
+        error = `${e}`;
+      }
+    } else {
+      if (!serverAddr.trim()) {
+        error = "Server address is required";
+        return;
+      }
+      try {
+        await invoke("start_client", { serverAddr });
+        connected = true;
+      } catch (e) {
+        error = `${e}`;
       }
     }
   }
@@ -34,21 +40,26 @@
     />
   </div>
 
-  <div class="field">
-    <label for="position">Screen Position</label>
-    <select id="position" bind:value={position} disabled={connected}>
-      <option value="Left">Left</option>
-      <option value="Right">Right</option>
-      <option value="Top">Top</option>
-      <option value="Bottom">Bottom</option>
-    </select>
-  </div>
-
-  <button class="toggle-btn" class:connected onclick={toggleConnection}>
+  <button
+    class="action-btn"
+    class:connected
+    onclick={toggleConnection}
+  >
     {connected ? "Disconnect" : "Connect"}
   </button>
 
-  <p class="status">{status}</p>
+  {#if error}
+    <p class="error">{error}</p>
+  {/if}
+
+  {#if connected}
+    <div class="status-card">
+      <div class="status-row">
+        <div class="status-dot"></div>
+        <span>Connected to {serverAddr}</span>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -65,37 +76,59 @@
   }
 
   .field label {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
-  select {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a0a0' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 12px center;
-    padding-right: 32px;
-  }
-
-  .toggle-btn {
+  .action-btn {
     background: var(--accent);
     color: white;
-    padding: 10px;
-    font-size: 15px;
+    padding: 12px;
+    font-size: 14px;
+    width: 100%;
   }
 
-  .toggle-btn:hover {
+  .action-btn:hover {
     background: var(--accent-hover);
   }
 
-  .toggle-btn.connected {
+  .action-btn.connected {
     background: var(--danger);
   }
 
-  .status {
-    color: var(--text-secondary);
-    font-size: 13px;
+  .action-btn.connected:hover {
+    background: #ff6961;
+  }
+
+  .error {
+    color: var(--danger);
+    font-size: 12px;
     text-align: center;
+  }
+
+  .status-card {
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(48, 209, 88, 0.4);
+    flex-shrink: 0;
   }
 </style>

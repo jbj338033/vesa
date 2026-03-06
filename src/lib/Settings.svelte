@@ -1,29 +1,42 @@
 <script lang="ts">
-  import StatusBar from "./StatusBar.svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
   import ServerView from "./ServerView.svelte";
   import ClientView from "./ClientView.svelte";
 
   let mode: "server" | "client" = $state("server");
-  let connected = $state(false);
+  let active = $state(false);
+
+  onMount(async () => {
+    try {
+      const status = await invoke<string>("get_status");
+      if (status === "server") {
+        mode = "server";
+        active = true;
+      } else if (status === "client") {
+        mode = "client";
+        active = true;
+      }
+    } catch {}
+  });
 </script>
 
 <div class="settings">
-  <header>
-    <h1>Vesa</h1>
-    <p class="subtitle">Software KVM</p>
-  </header>
-
-  <StatusBar {connected} {mode} info={connected ? "Active" : "Inactive"} />
+  <div class="titlebar" data-tauri-drag-region>
+    <span class="title">Vesa</span>
+  </div>
 
   <div class="mode-toggle">
     <button
       class:active={mode === "server"}
+      disabled={active && mode !== "server"}
       onclick={() => (mode = "server")}
     >
       Server
     </button>
     <button
       class:active={mode === "client"}
+      disabled={active && mode !== "client"}
       onclick={() => (mode = "client")}
     >
       Client
@@ -32,43 +45,38 @@
 
   <div class="content">
     {#if mode === "server"}
-      <ServerView />
+      <ServerView bind:running={active} />
     {:else}
-      <ClientView />
+      <ClientView bind:connected={active} />
     {/if}
   </div>
 </div>
 
 <style>
   .settings {
-    max-width: 400px;
+    max-width: 440px;
     margin: 0 auto;
+    padding: 0 24px 24px;
   }
 
-  header {
+  .titlebar {
     text-align: center;
-    margin-bottom: 20px;
+    padding: 16px 0 20px;
   }
 
-  header h1 {
-    font-size: 24px;
+  .title {
+    font-size: 15px;
     font-weight: 700;
-    letter-spacing: -0.5px;
-  }
-
-  .subtitle {
-    color: var(--text-secondary);
-    font-size: 13px;
-    margin-top: 2px;
+    letter-spacing: -0.02em;
+    color: var(--text);
   }
 
   .mode-toggle {
     display: flex;
-    gap: 0;
-    margin-bottom: 20px;
     background: var(--bg-secondary);
-    border-radius: var(--radius);
+    border-radius: 10px;
     padding: 3px;
+    margin-bottom: 24px;
   }
 
   .mode-toggle button {
@@ -76,16 +84,22 @@
     background: transparent;
     color: var(--text-secondary);
     padding: 8px;
-    border-radius: 6px;
+    border-radius: 8px;
+    font-size: 13px;
   }
 
-  .mode-toggle button:hover {
-    transform: none;
+  .mode-toggle button:hover:not(:disabled) {
     color: var(--text);
   }
 
   .mode-toggle button.active {
-    background: var(--accent);
-    color: white;
+    background: var(--bg-tertiary);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  .mode-toggle button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 </style>
