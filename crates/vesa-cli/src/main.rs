@@ -25,6 +25,9 @@ enum Commands {
     Client {
         #[arg(short, long)]
         server: SocketAddr,
+
+        #[arg(short, long, default_value = "Right")]
+        position: String,
     },
 }
 
@@ -57,10 +60,20 @@ async fn main() -> anyhow::Result<()> {
             let mut server = Server::new(config, cert_dir);
             server.run(shutdown_rx).await?;
         }
-        Commands::Client { server } => {
+        Commands::Client { server, position } => {
+            let pos = match position.as_str() {
+                "Left" | "left" => vesa_event::Position::Left,
+                "Right" | "right" => vesa_event::Position::Right,
+                "Top" | "top" => vesa_event::Position::Top,
+                "Bottom" | "bottom" => vesa_event::Position::Bottom,
+                _ => {
+                    eprintln!("invalid position: {position} (use Left/Right/Top/Bottom)");
+                    std::process::exit(1);
+                }
+            };
             let config = ClientConfig {
                 server_addr: server,
-                position: vesa_event::Position::Right,
+                position: pos,
             };
             let mut client = Client::new(config);
             client.run(shutdown_rx).await?;
