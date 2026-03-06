@@ -55,7 +55,28 @@ impl Client {
 
         debug!("[client] opening bi-directional stream to server...");
         let mut stream = conn.open_stream().await?;
-        info!("[client] stream opened successfully, entering event loop");
+        info!("[client] stream opened, sending initial handshake...");
+
+        // Send a Ping to materialize the QUIC stream — open_bi() is local-only
+        // and the server's accept_bi() won't fire until data is actually sent.
+        stream.send(&Message::Ping).await.map_err(|e| {
+            error!("[client] failed to send handshake ping: {}", e);
+            ClientError::Net(e)
+        })?;
+        debug!("[client] handshake ping sent, waiting for pong...");
+
+        match stream.recv().await {
+            Ok(Message::Pong) => {
+                info!("[client] handshake complete, entering event loop");
+            }
+            Ok(other) => {
+                warn!("[client] expected Pong, got {:?}", other);
+            }
+            Err(e) => {
+                error!("[client] handshake failed: {}", e);
+                return Err(ClientError::Net(e));
+            }
+        }
 
         let mut datagram_count: u64 = 0;
         let mut event_count: u64 = 0;

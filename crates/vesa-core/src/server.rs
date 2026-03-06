@@ -130,6 +130,23 @@ impl Server {
             }
         };
 
+        // Read the client's handshake ping and reply with pong
+        match stream.recv().await {
+            Ok(Message::Ping) => {
+                debug!("[server::handle] received handshake ping, sending pong");
+                if let Err(e) = stream.send(&Message::Pong).await {
+                    warn!("[server::handle] failed to send pong: {}", e);
+                }
+            }
+            Ok(other) => {
+                debug!("[server::handle] expected Ping, got {:?}", other);
+            }
+            Err(e) => {
+                error!("[server::handle] failed to read handshake: {}", e);
+                return;
+            }
+        }
+
         info!("[server::handle] stream established with {} — entering event loop", addr);
 
         // Determine which screen edge triggers switch to this client.
