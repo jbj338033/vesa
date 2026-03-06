@@ -136,19 +136,25 @@ impl Server {
                             if let Some(push_dir) = detect_edge_push(&event) {
                                 if push_dir == client_position {
                                     edge_push_count += 1;
+                                    debug!("edge push {:?} count={}/{}", push_dir, edge_push_count, EDGE_PUSH_THRESHOLD);
                                     if edge_push_count >= EDGE_PUSH_THRESHOLD {
                                         self.enter_capture(client_position, capture, &mut stream).await;
                                         edge_push_count = 0;
                                     }
                                 } else {
+                                    if edge_push_count > 0 {
+                                        debug!("edge push reset: got {:?}, wanted {:?}", push_dir, client_position);
+                                    }
                                     edge_push_count = 0;
                                 }
-                            } else {
+                            } else if matches!(event, InputEvent::PointerMotion { .. }) {
+                                // Only reset on motion events that aren't edge pushes
+                                if edge_push_count > 0 {
+                                    debug!("edge push reset: non-directional motion {:?}", event);
+                                }
                                 edge_push_count = 0;
                             }
-
-                            // Check for release hotkey
-                            // (no-op in Idle, but reset edge count on any key press)
+                            // Non-motion events (key, modifier, scroll) don't reset counter
                         }
                         ServerState::Capturing { .. } => {
                             // Check release hotkey
@@ -231,13 +237,14 @@ fn detect_edge_push(event: &InputEvent) -> Option<Position> {
         let adx = dx.abs();
         let ady = dy.abs();
 
-        // Only consider clearly directional movements
-        if adx < 1.0 && ady < 1.0 {
+        // Ignore tiny movements
+        if adx < 0.5 && ady < 0.5 {
             return None;
         }
 
+        // Determine dominant direction — relaxed to 1.5x ratio
         // Horizontal push
-        if adx > ady * 2.0 {
+        if adx > ady * 1.5 {
             if *dx > 0.0 {
                 return Some(Position::Right);
             } else {
@@ -246,12 +253,23 @@ fn detect_edge_push(event: &InputEvent) -> Option<Position> {
         }
 
         // Vertical push
-        if ady > adx * 2.0 {
+        if ady > adx * 1.5 {
             if *dy > 0.0 {
                 return Some(Position::Bottom);
             } else {
                 return Some(Position::Top);
             }
+        }
+
+        // Diagonal — pick dominant axis even without strong ratio
+        if adx >= ady && *dx > 0.0 {
+            return Some(Position::Right);
+        } else if adx >= ady {
+            return Some(Position::Left);
+        } else if *dy > 0.0 {
+            return Some(Position::Bottom);
+        } else {
+            return Some(Position::Top);
         }
     }
     None
