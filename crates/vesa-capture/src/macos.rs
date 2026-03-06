@@ -19,6 +19,15 @@ unsafe extern "C" {
     fn AXIsProcessTrustedWithOptions(options: core_foundation::base::CFTypeRef) -> bool;
 }
 
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGDisplayHideCursor(display: u32) -> i32;
+    fn CGDisplayShowCursor(display: u32) -> i32;
+}
+
+/// kCGDirectMainDisplay = 0
+const MAIN_DISPLAY: u32 = 0;
+
 fn check_accessibility() -> bool {
     unsafe {
         use core_foundation::boolean::CFBoolean;
@@ -240,11 +249,6 @@ impl InputCapture for MacOSCapture {
                     }
 
                     if capturing.load(Ordering::Relaxed) {
-                        // Warp cursor to screen center on every motion event.
-                        // CGWarpMouseCursorPosition does not generate new events.
-                        // This is the most reliable way to prevent cursor movement
-                        // since CGAssociateMouseAndMouseCursorPosition may not work
-                        // when the process is not the foreground app.
                         if matches!(
                             etype,
                             CGEventType::MouseMoved
@@ -325,11 +329,8 @@ impl InputCapture for MacOSCapture {
     }
 
     fn set_capturing(&mut self, capturing: bool) {
-        let display = CGDisplay::main();
         if capturing {
-            // Warp cursor to center BEFORE setting flag, so the warp event
-            // itself isn't suppressed and the cursor actually moves away from the edge.
-            let bounds = display.bounds();
+            let bounds = CGDisplay::main().bounds();
             let center = CGPoint::new(
                 bounds.origin.x + bounds.size.width / 2.0,
                 bounds.origin.y + bounds.size.height / 2.0,
@@ -338,14 +339,19 @@ impl InputCapture for MacOSCapture {
 
             self.capturing.store(true, Ordering::Relaxed);
             let _ = CGDisplay::associate_mouse_and_mouse_cursor_position(false);
-            let _ = display.hide_cursor();
+            unsafe { CGDisplayHideCursor(MAIN_DISPLAY); }
             tracing::debug!("cursor warped to center, hidden, mouse disassociated");
         } else {
             self.capturing.store(false, Ordering::Relaxed);
             let _ = CGDisplay::associate_mouse_and_mouse_cursor_position(true);
-            let _ = display.show_cursor();
+            unsafe { CGDisplayShowCursor(MAIN_DISPLAY); }
             tracing::debug!("cursor shown, mouse reassociated");
         }
+    }
+
+    fn warp_cursor(&mut self, x: f64, y: f64) {
+        let _ = CGDisplay::warp_mouse_cursor_position(CGPoint::new(x, y));
+        tracing::debug!("cursor warped to ({:.0}, {:.0})", x, y);
     }
 
     fn cursor_position(&self) -> (f64, f64) {

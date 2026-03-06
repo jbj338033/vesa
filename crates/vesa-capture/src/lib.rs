@@ -46,6 +46,9 @@ pub trait InputCapture: Send + 'static {
     fn screen_bounds(&self) -> (f64, f64, f64, f64) {
         (0.0, 0.0, 1920.0, 1080.0)
     }
+
+    /// Warp the cursor to the given screen coordinates.
+    fn warp_cursor(&mut self, _x: f64, _y: f64) {}
 }
 
 pub fn create_capture() -> Result<Box<dyn InputCapture>, CaptureError> {
