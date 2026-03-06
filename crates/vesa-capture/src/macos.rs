@@ -240,6 +240,25 @@ impl InputCapture for MacOSCapture {
                     }
 
                     if capturing.load(Ordering::Relaxed) {
+                        // Warp cursor to screen center on every motion event.
+                        // CGWarpMouseCursorPosition does not generate new events.
+                        // This is the most reliable way to prevent cursor movement
+                        // since CGAssociateMouseAndMouseCursorPosition may not work
+                        // when the process is not the foreground app.
+                        if matches!(
+                            etype,
+                            CGEventType::MouseMoved
+                                | CGEventType::LeftMouseDragged
+                                | CGEventType::RightMouseDragged
+                                | CGEventType::OtherMouseDragged
+                        ) {
+                            let bounds = CGDisplay::main().bounds();
+                            let center = CGPoint::new(
+                                bounds.origin.x + bounds.size.width / 2.0,
+                                bounds.origin.y + bounds.size.height / 2.0,
+                            );
+                            let _ = CGDisplay::warp_mouse_cursor_position(center);
+                        }
                         CallbackResult::Drop
                     } else {
                         CallbackResult::Keep
