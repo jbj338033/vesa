@@ -30,8 +30,6 @@ pub struct ClientEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientConfig {
     pub server_addr: SocketAddr,
-    #[serde(default = "default_position")]
-    pub position: Position,
 }
 
 fn default_bind_addr() -> SocketAddr {
@@ -40,10 +38,6 @@ fn default_bind_addr() -> SocketAddr {
 
 fn default_hotkey() -> String {
     "ScrollLock".to_string()
-}
-
-fn default_position() -> Position {
-    Position::Right
 }
 
 impl VesaConfig {
@@ -99,12 +93,10 @@ position = "Right"
         let toml = r#"
 [client]
 server_addr = "10.0.0.1:4920"
-position = "Left"
 "#;
         let config: VesaConfig = toml::from_str(toml).unwrap();
         let client = config.client.unwrap();
         assert_eq!(client.server_addr.to_string(), "10.0.0.1:4920");
-        assert_eq!(client.position, Position::Left);
     }
 
     #[test]
@@ -140,9 +132,11 @@ position = "Left"
             ("Top", Position::Top),
             ("Bottom", Position::Bottom),
         ] {
-            let toml = format!("[client]\nserver_addr = \"127.0.0.1:1\"\nposition = \"{s}\"\n");
+            let toml = format!(
+                "[server]\n[[server.clients]]\nname = \"test\"\nposition = \"{s}\"\n"
+            );
             let config: VesaConfig = toml::from_str(&toml).unwrap();
-            assert_eq!(config.client.unwrap().position, expected);
+            assert_eq!(config.server.unwrap().clients[0].position, expected);
         }
     }
 

@@ -40,14 +40,23 @@ pub struct Server {
     config: ServerConfig,
     state: ServerState,
     cert_dir: PathBuf,
+    position_rx: watch::Receiver<Position>,
+    client_connected_tx: watch::Sender<bool>,
 }
 
 impl Server {
-    pub fn new(config: ServerConfig, cert_dir: PathBuf) -> Self {
+    pub fn new(
+        config: ServerConfig,
+        cert_dir: PathBuf,
+        position_rx: watch::Receiver<Position>,
+        client_connected_tx: watch::Sender<bool>,
+    ) -> Self {
         Self {
             config,
             state: ServerState::Idle,
             cert_dir,
+            position_rx,
+            client_connected_tx,
         }
     }
 
@@ -149,18 +158,21 @@ impl Server {
             }
         }
 
+        // Send AssignPosition after handshake
+        let client_position = *self.position_rx.borrow();
+        info!("[server::handle] assigning position {:?} to client", client_position);
+        if let Err(e) = stream.send(&Message::AssignPosition(client_position)).await {
+            warn!("[server::handle] failed to send AssignPosition: {}", e);
+            return;
+        }
+
+        // Notify UI that a client is connected
+        let _ = self.client_connected_tx.send(true);
+
         info!("[server::handle] stream established with {} — entering event loop", addr);
-
-        // Determine which screen edge triggers switch to this client.
-        let client_position = self
-            .config
-            .clients
-            .first()
-            .map(|c| c.position)
-            .unwrap_or(vesa_event::Position::Right);
-
         info!("[server::handle] client_position={:?}, edge_threshold={}", client_position, EDGE_PUSH_THRESHOLD);
 
+        let mut client_position = client_position;
         let mut edge_push_count: u32 = 0;
         let mut total_events: u64 = 0;
         let mut forwarded_events: u64 = 0;
@@ -171,6 +183,17 @@ impl Server {
                     if *shutdown_rx.borrow() {
                         info!("[server::handle] shutdown during client session");
                         break;
+                    }
+                }
+                _ = self.position_rx.changed() => {
+                    let new_pos = *self.position_rx.borrow();
+                    if new_pos != client_position {
+                        info!("[server::handle] position changed {:?} → {:?}", client_position, new_pos);
+                        client_position = new_pos;
+                        edge_push_count = 0;
+                        if let Err(e) = stream.send(&Message::AssignPosition(new_pos)).await {
+                            warn!("[server::handle] failed to send AssignPosition: {}", e);
+                        }
                     }
                 }
                 Some(event) = event_rx.recv() => {
@@ -216,7 +239,7 @@ impl Server {
                             // Check release hotkey
                             if is_release_hotkey(&event) {
                                 info!("[server::capture] release hotkey pressed, leaving capture");
-                                self.leave_capture(capture, &mut stream).await;
+                                self.leave_capture(capture, &mut stream, 0.5).await;
                                 continue;
                             }
 
@@ -233,10 +256,10 @@ impl Server {
                 }
                 result = stream.recv() => {
                     match result {
-                        Ok(Message::Leave) => {
-                            info!("[server::handle] client requested return (edge push)");
+                        Ok(Message::Leave(y_ratio)) => {
+                            info!("[server::handle] client requested return (edge push), y_ratio={:.3}", y_ratio);
                             if self.state != ServerState::Idle {
-                                self.leave_capture(capture, &mut stream).await;
+                                self.leave_capture(capture, &mut stream, y_ratio).await;
                             }
                         }
                         Ok(msg) => {
@@ -245,7 +268,7 @@ impl Server {
                         Err(e) => {
                             warn!("[server::handle] stream read error: {}", e);
                             if self.state != ServerState::Idle {
-                                self.leave_capture(capture, &mut stream).await;
+                                self.leave_capture(capture, &mut stream, 0.5).await;
                             }
                             break;
                         }
@@ -257,7 +280,7 @@ impl Server {
                         Err(e) => {
                             warn!("[server::handle] client {} disconnected: {}", addr, e);
                             if self.state != ServerState::Idle {
-                                self.leave_capture(capture, &mut stream).await;
+                                self.leave_capture(capture, &mut stream, 0.5).await;
                             }
                             break;
                         }
@@ -265,6 +288,9 @@ impl Server {
                 }
             }
         }
+
+        // Notify UI that client disconnected
+        let _ = self.client_connected_tx.send(false);
 
         info!(
             "[server::handle] session ended: total_events={}, forwarded={}",
@@ -297,13 +323,39 @@ impl Server {
         &mut self,
         capture: &mut Box<dyn vesa_capture::InputCapture>,
         stream: &mut VesaStream,
+        y_ratio: f64,
     ) {
-        info!("[server::capture] <<< LEAVING capture mode");
+        info!("[server::capture] <<< LEAVING capture mode, y_ratio={:.3}", y_ratio);
+
+        // Compute the cursor warp position on the return edge BEFORE releasing capture
+        let target = match &self.state {
+            ServerState::Capturing { target } => *target,
+            _ => Position::Right,
+        };
+        let (sx, sy, sw, sh) = capture.screen_bounds();
+        let warp_y = sy + sh * y_ratio.clamp(0.0, 1.0);
+        let warp_x = match target {
+            Position::Right => sx + sw - 1.0,
+            Position::Left => sx + 1.0,
+            Position::Bottom => sx + sw * 0.5,
+            Position::Top => sx + sw * 0.5,
+        };
+        // For top/bottom, also apply y from the edge
+        let warp_y = match target {
+            Position::Top => sy + 1.0,
+            Position::Bottom => sy + sh - 1.0,
+            _ => warp_y,
+        };
+
         self.state = ServerState::Idle;
         capture.set_capturing(false);
-        debug!("[server::capture] set_capturing(false), sending Leave message...");
+        capture.warp_cursor(warp_x, warp_y);
+        debug!(
+            "[server::capture] cursor warped to ({:.0},{:.0}), sending Leave message...",
+            warp_x, warp_y
+        );
 
-        if let Err(e) = stream.send(&Message::Leave).await {
+        if let Err(e) = stream.send(&Message::Leave(y_ratio)).await {
             warn!("[server::capture] failed to send Leave message: {}", e);
         } else {
             debug!("[server::capture] Leave message sent successfully");

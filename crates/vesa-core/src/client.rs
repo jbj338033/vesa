@@ -6,6 +6,9 @@ use vesa_proto::Message;
 
 use crate::config::ClientConfig;
 
+/// Default position used before server assigns one.
+const DEFAULT_POSITION: Position = Position::Right;
+
 /// Same threshold as server for consistency.
 const EDGE_PUSH_THRESHOLD: u32 = 3;
 
@@ -45,7 +48,7 @@ impl Client {
         &mut self,
         mut shutdown_rx: watch::Receiver<bool>,
     ) -> Result<(), ClientError> {
-        info!("[client] starting, server_addr={}, position={:?}", self.config.server_addr, self.config.position);
+        info!("[client] starting, server_addr={}", self.config.server_addr);
 
         let bind_addr = "0.0.0.0:0".parse().unwrap();
         debug!("[client] connecting to server...");
@@ -71,7 +74,7 @@ impl Client {
 
         match stream.recv().await {
             Ok(Message::Pong) => {
-                info!("[client] handshake complete, entering event loop");
+                debug!("[client] pong received, waiting for position assignment...");
             }
             Ok(other) => {
                 warn!("[client] expected Pong, got {:?}", other);
@@ -82,15 +85,31 @@ impl Client {
             }
         }
 
+        // Wait for server to assign our position
+        let mut position = match stream.recv().await {
+            Ok(Message::AssignPosition(pos)) => {
+                info!("[client] server assigned position: {:?}", pos);
+                pos
+            }
+            Ok(other) => {
+                warn!("[client] expected AssignPosition, got {:?} — using default", other);
+                DEFAULT_POSITION
+            }
+            Err(e) => {
+                error!("[client] failed to receive position assignment: {}", e);
+                return Err(ClientError::Net(e));
+            }
+        };
+
         let mut datagram_count: u64 = 0;
         let mut event_count: u64 = 0;
 
         // The return edge is opposite to our position relative to the server.
         // e.g. if we are to the Right of the server, pushing Left returns control.
-        let return_direction = self.config.position.opposite();
+        let mut return_direction = position.opposite();
         let mut edge_push_count: u32 = 0;
 
-        info!("[client] position={:?}, return_direction={:?}", self.config.position, return_direction);
+        info!("[client] position={:?}, return_direction={:?}", position, return_direction);
 
         loop {
             tokio::select! {
@@ -127,7 +146,9 @@ impl Client {
                                             );
                                             if edge_push_count >= EDGE_PUSH_THRESHOLD {
                                                 info!("[client::edge] THRESHOLD — requesting return to server");
-                                                if let Err(e) = stream.send(&Message::Leave).await {
+                                                let y_ratio = if sh > 0.0 { (cy - sy) / sh } else { 0.5 };
+                                                let y_ratio = y_ratio.clamp(0.0, 1.0);
+                                                if let Err(e) = stream.send(&Message::Leave(y_ratio)).await {
                                                     warn!("[client] failed to send Leave: {}", e);
                                                 }
                                                 self.state = ClientState::Connected;
@@ -159,10 +180,16 @@ impl Client {
                             self.state = ClientState::Active;
                             edge_push_count = 0;
                         }
-                        Ok(Message::Leave) => {
+                        Ok(Message::Leave(_)) => {
                             info!("[client] <<< LEAVE — deactivating input emulation (emitted {} events)", event_count);
                             self.state = ClientState::Connected;
                             event_count = 0;
+                            edge_push_count = 0;
+                        }
+                        Ok(Message::AssignPosition(pos)) => {
+                            info!("[client] position reassigned: {:?} → {:?}", position, pos);
+                            position = pos;
+                            return_direction = pos.opposite();
                             edge_push_count = 0;
                         }
                         Ok(msg) => {
