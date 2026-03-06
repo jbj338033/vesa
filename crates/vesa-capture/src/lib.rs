@@ -36,6 +36,16 @@ pub trait InputCapture: Send + 'static {
     fn start(&mut self) -> Result<mpsc::Receiver<InputEvent>, CaptureError>;
     fn stop(&mut self) -> Result<(), CaptureError>;
     fn set_capturing(&mut self, capturing: bool);
+
+    /// Returns the current cursor position (x, y) in screen coordinates.
+    fn cursor_position(&self) -> (f64, f64) {
+        (0.0, 0.0)
+    }
+
+    /// Returns the primary screen bounds (x, y, width, height).
+    fn screen_bounds(&self) -> (f64, f64, f64, f64) {
+        (0.0, 0.0, 1920.0, 1080.0)
+    }
 }
 
 pub fn create_capture() -> Result<Box<dyn InputCapture>, CaptureError> {

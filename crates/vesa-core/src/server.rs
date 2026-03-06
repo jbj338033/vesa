@@ -181,13 +181,15 @@ impl Server {
 
                     match self.state {
                         ServerState::Idle => {
-                            // Check for edge push to enter capture mode
-                            if let Some(push_dir) = detect_edge_push(&event) {
+                            let (cx, cy) = capture.cursor_position();
+                            let (sx, sy, sw, sh) = capture.screen_bounds();
+
+                            if let Some(push_dir) = detect_edge_push(&event, cx, cy, sx, sy, sw, sh) {
                                 if push_dir == client_position {
                                     edge_push_count += 1;
                                     debug!(
-                                        "[server::edge] push {:?} count={}/{} (event: dx/dy from {:?})",
-                                        push_dir, edge_push_count, EDGE_PUSH_THRESHOLD, event
+                                        "[server::edge] push {:?} count={}/{} cursor=({:.0},{:.0}) screen=({:.0},{:.0},{:.0},{:.0})",
+                                        push_dir, edge_push_count, EDGE_PUSH_THRESHOLD, cx, cy, sx, sy, sw, sh
                                     );
                                     if edge_push_count >= EDGE_PUSH_THRESHOLD {
                                         info!("[server::edge] THRESHOLD REACHED — entering capture mode");
@@ -311,52 +313,45 @@ impl Server {
     }
 }
 
+/// Pixels from screen edge within which we consider the cursor "at the edge".
+const EDGE_MARGIN: f64 = 2.0;
+
 /// Detect if a mouse motion event is pushing against a screen edge.
-/// Returns the direction being pushed (Left/Right/Top/Bottom) if the cursor
-/// is at the edge and the delta continues in that direction.
-///
-/// For low-level capture hooks, the cursor is warped to center when capturing,
-/// but when Idle the cursor moves freely. We detect edge pushing by checking
-/// if the delta is strongly directional (the cursor is stuck at the edge,
-/// so the OS reports no actual movement, but the raw delta from the device
-/// still shows the intended direction).
-fn detect_edge_push(event: &InputEvent) -> Option<Position> {
+/// Requires: (1) cursor is within EDGE_MARGIN of the screen boundary AND
+/// (2) the delta continues pushing toward that boundary.
+fn detect_edge_push(
+    event: &InputEvent,
+    cursor_x: f64,
+    cursor_y: f64,
+    screen_x: f64,
+    screen_y: f64,
+    screen_w: f64,
+    screen_h: f64,
+) -> Option<Position> {
     if let InputEvent::PointerMotion { dx, dy, .. } = event {
         let adx = dx.abs();
         let ady = dy.abs();
 
-        // Ignore tiny movements
         if adx < 0.5 && ady < 0.5 {
             return None;
         }
 
-        // Determine dominant direction — relaxed to 1.5x ratio
-        // Horizontal push
-        if adx > ady * 1.5 {
-            if *dx > 0.0 {
-                return Some(Position::Right);
-            } else {
-                return Some(Position::Left);
-            }
-        }
+        // Check if cursor is at each edge and delta pushes toward it
+        let at_right = cursor_x >= screen_x + screen_w - EDGE_MARGIN;
+        let at_left = cursor_x <= screen_x + EDGE_MARGIN;
+        let at_bottom = cursor_y >= screen_y + screen_h - EDGE_MARGIN;
+        let at_top = cursor_y <= screen_y + EDGE_MARGIN;
 
-        // Vertical push
-        if ady > adx * 1.5 {
-            if *dy > 0.0 {
-                return Some(Position::Bottom);
-            } else {
-                return Some(Position::Top);
-            }
-        }
-
-        // Diagonal — pick dominant axis even without strong ratio
-        if adx >= ady && *dx > 0.0 {
+        if at_right && *dx > 0.0 && adx > ady {
             return Some(Position::Right);
-        } else if adx >= ady {
+        }
+        if at_left && *dx < 0.0 && adx > ady {
             return Some(Position::Left);
-        } else if *dy > 0.0 {
+        }
+        if at_bottom && *dy > 0.0 && ady > adx {
             return Some(Position::Bottom);
-        } else {
+        }
+        if at_top && *dy < 0.0 && ady > adx {
             return Some(Position::Top);
         }
     }

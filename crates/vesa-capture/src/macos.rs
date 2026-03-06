@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use core_foundation::base::TCFType;
@@ -173,6 +173,8 @@ unsafe impl Send for RunLoopHandle {}
 
 pub struct MacOSCapture {
     capturing: Arc<AtomicBool>,
+    cursor_x: Arc<AtomicU64>,
+    cursor_y: Arc<AtomicU64>,
     run_loop_handle: Option<RunLoopHandle>,
 }
 
@@ -184,6 +186,8 @@ impl MacOSCapture {
 
         Ok(Self {
             capturing: Arc::new(AtomicBool::new(false)),
+            cursor_x: Arc::new(AtomicU64::new(0)),
+            cursor_y: Arc::new(AtomicU64::new(0)),
             run_loop_handle: None,
         })
     }
@@ -197,6 +201,8 @@ impl InputCapture for MacOSCapture {
 
         let (tx, rx) = mpsc::channel(256);
         let capturing = self.capturing.clone();
+        let cursor_x = self.cursor_x.clone();
+        let cursor_y = self.cursor_y.clone();
         let (rl_tx, rl_rx) = std::sync::mpsc::sync_channel::<SendPtr>(1);
 
         let thread = std::thread::spawn(move || {
@@ -223,12 +229,16 @@ impl InputCapture for MacOSCapture {
                 CGEventTapOptions::Default,
                 events_of_interest,
                 move |_proxy: CGEventTapProxy, etype: CGEventType, event: &CGEvent| {
+                    // Track cursor position for edge detection
+                    let loc = event.location();
+                    cursor_x.store(loc.x.to_bits(), Ordering::Relaxed);
+                    cursor_y.store(loc.y.to_bits(), Ordering::Relaxed);
+
                     if let Some(input_event) = convert_event(etype, event) {
                         let _ = tx.try_send(input_event);
                     }
 
                     if capturing.load(Ordering::Relaxed) {
-                        // Suppress all events locally — they are forwarded to the client
                         CallbackResult::Drop
                     } else {
                         CallbackResult::Keep
@@ -299,7 +309,6 @@ impl InputCapture for MacOSCapture {
 
         let display = CGDisplay::main();
         if capturing {
-            // Disassociate mouse from cursor so it doesn't move visually
             let _ = CGDisplay::associate_mouse_and_mouse_cursor_position(false);
             let _ = display.hide_cursor();
             tracing::debug!("cursor hidden, mouse disassociated");
@@ -308,5 +317,21 @@ impl InputCapture for MacOSCapture {
             let _ = display.show_cursor();
             tracing::debug!("cursor shown, mouse reassociated");
         }
+    }
+
+    fn cursor_position(&self) -> (f64, f64) {
+        let x = f64::from_bits(self.cursor_x.load(Ordering::Relaxed));
+        let y = f64::from_bits(self.cursor_y.load(Ordering::Relaxed));
+        (x, y)
+    }
+
+    fn screen_bounds(&self) -> (f64, f64, f64, f64) {
+        let bounds = CGDisplay::main().bounds();
+        (
+            bounds.origin.x,
+            bounds.origin.y,
+            bounds.size.width,
+            bounds.size.height,
+        )
     }
 }
