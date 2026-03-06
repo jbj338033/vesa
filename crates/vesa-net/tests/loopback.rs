@@ -92,7 +92,7 @@ async fn stream_enter_ack_leave() {
         let ack = stream.recv().await.unwrap();
         assert_eq!(ack, Message::Ack(1));
 
-        stream.send(&Message::Leave).await.unwrap();
+        stream.send(&Message::Leave(0.5)).await.unwrap();
 
         // Wait for server to finish reading before closing
         done_rx.await.ok();
@@ -108,7 +108,7 @@ async fn stream_enter_ack_leave() {
     stream.send(&Message::Ack(1)).await.unwrap();
 
     let leave = stream.recv().await.unwrap();
-    assert_eq!(leave, Message::Leave);
+    assert_eq!(leave, Message::Leave(0.5));
 
     // Signal client it's safe to close
     let _ = done_tx.send(());
