@@ -1,17 +1,65 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import ScreenLayout from "./ScreenLayout.svelte";
 
   let bindAddr = $state("0.0.0.0:4920");
-  let running = $state(false);
-  let clients: { name: string; position: string }[] = $state([]);
+  let { running = $bindable(false) }: { running?: boolean } = $props();
+  let error = $state("");
+
+  let clients: { id: string; name: string; position: string }[] = $state([]);
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function pollClients() {
+    if (!running) return;
+    try {
+      clients = await invoke("get_clients");
+    } catch {
+      // ignore polling errors
+    }
+  }
+
+  $effect(() => {
+    if (running) {
+      pollClients();
+      pollTimer = setInterval(pollClients, 1000);
+    } else {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+      clients = [];
+    }
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  });
 
   async function toggleServer() {
+    error = "";
     if (running) {
-      await invoke("stop_server");
-      running = false;
+      try {
+        await invoke("stop_server");
+        running = false;
+        clients = [];
+      } catch (e) {
+        error = `${e}`;
+      }
     } else {
-      await invoke("start_server", { bindAddr });
-      running = true;
+      try {
+        await invoke("start_server", { bindAddr });
+        running = true;
+      } catch (e) {
+        error = `${e}`;
+      }
+    }
+  }
+
+  async function onClientPositionChange(id: string, position: string) {
+    clients = clients.map((c) =>
+      c.id === id ? { ...c, position } : c
+    );
+    try {
+      await invoke("set_client_position", { position });
+    } catch (e) {
+      error = `${e}`;
     }
   }
 </script>
@@ -19,25 +67,35 @@
 <div class="server-view">
   <div class="field">
     <label for="bind">Bind Address</label>
-    <input id="bind" bind:value={bindAddr} disabled={running} placeholder="0.0.0.0:4920" />
+    <input
+      id="bind"
+      bind:value={bindAddr}
+      disabled={running}
+      placeholder="0.0.0.0:4920"
+    />
   </div>
 
-  <button class="toggle-btn" class:running onclick={toggleServer}>
+  <button
+    class="action-btn"
+    class:running
+    onclick={toggleServer}
+  >
     {running ? "Stop Server" : "Start Server"}
   </button>
 
+  {#if error}
+    <p class="error">{error}</p>
+  {/if}
+
   {#if running}
-    <div class="clients-section">
-      <h3>Connected Clients</h3>
+    <div class="layout-section">
+      <div class="section-header">
+        <div class="status-dot"></div>
+        <span>Listening on {bindAddr}</span>
+      </div>
+      <ScreenLayout {clients} onpositionchange={onClientPositionChange} />
       {#if clients.length === 0}
-        <p class="empty">No clients connected</p>
-      {:else}
-        {#each clients as client}
-          <div class="client-item">
-            <span>{client.name}</span>
-            <span class="position">{client.position}</span>
-          </div>
-        {/each}
+        <p class="hint">Waiting for clients to connect...</p>
       {/if}
     </div>
   {/if}
@@ -57,53 +115,65 @@
   }
 
   .field label {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
-  .toggle-btn {
+  .action-btn {
     background: var(--accent);
     color: white;
-    padding: 10px;
-    font-size: 15px;
+    padding: 12px;
+    font-size: 14px;
+    width: 100%;
   }
 
-  .toggle-btn:hover {
+  .action-btn:hover {
     background: var(--accent-hover);
   }
 
-  .toggle-btn.running {
+  .action-btn.running {
     background: var(--danger);
   }
 
-  .clients-section {
-    margin-top: 8px;
+  .action-btn.running:hover {
+    background: #ff6961;
   }
 
-  .clients-section h3 {
-    font-size: 14px;
-    margin-bottom: 8px;
-    color: var(--text-secondary);
+  .error {
+    color: var(--danger);
+    font-size: 12px;
+    text-align: center;
   }
 
-  .empty {
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-style: italic;
-  }
-
-  .client-item {
+  .layout-section {
     display: flex;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background: var(--bg-secondary);
-    border-radius: var(--radius);
-    margin-bottom: 4px;
+    flex-direction: column;
+    gap: 12px;
   }
 
-  .position {
-    color: var(--accent);
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 13px;
+    font-weight: 500;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(48, 209, 88, 0.4);
+    flex-shrink: 0;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: center;
   }
 </style>
