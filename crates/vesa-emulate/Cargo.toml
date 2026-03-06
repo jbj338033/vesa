@@ -1,0 +1,29 @@
+[package]
+name = "vesa-emulate"
+description = "Input injection backends for Vesa software KVM"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+vesa-event = { path = "../vesa-event" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = { version = "0.25", features = ["highsierra"] }
+foreign-types = "0.5"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = "0.12"
