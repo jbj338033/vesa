@@ -1,0 +1,24 @@
+[package]
+name = "vesa-app"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/jbj338033/vesa"
+
+[lib]
+name = "vesa_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+vesa-core = { path = "../crates/vesa-core" }
+vesa-event = { path = "../crates/vesa-event" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
