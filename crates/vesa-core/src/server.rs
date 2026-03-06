@@ -57,38 +57,55 @@ impl Server {
         &mut self,
         mut shutdown_rx: watch::Receiver<bool>,
     ) -> Result<(), ServerError> {
+        info!("[server] starting, bind_addr={}", self.config.bind_addr);
+        debug!("[server] config: {:?}", self.config);
+
         let identity = Identity::load_or_generate(&self.cert_dir)?;
         info!(
-            "certificate fingerprint: {:02x?}",
+            "[server] certificate fingerprint: {:02x?}",
             &identity.fingerprint()[..8]
         );
 
         let server = NetServer::bind(self.config.bind_addr, &identity)?;
-        info!("server listening on {}", self.config.bind_addr);
+        info!("[server] listening on {}", self.config.bind_addr);
 
+        debug!("[server] creating input capture backend...");
         let mut capture = vesa_capture::create_capture()?;
+        info!("[server] input capture backend created");
+
+        debug!("[server] starting input capture...");
         let mut event_rx = capture.start()?;
+        info!("[server] input capture started, waiting for connections...");
+
+        let mut idle_event_count: u64 = 0;
 
         loop {
             tokio::select! {
                 _ = shutdown_rx.changed() => {
                     if *shutdown_rx.borrow() {
-                        info!("server shutting down");
+                        info!("[server] shutdown signal received");
                         break;
                     }
                 }
                 Some(conn) = server.accept() => {
-                    info!("client connected from {}", conn.remote_address());
+                    info!("[server] === CLIENT CONNECTED from {} ===", conn.remote_address());
+                    debug!("[server] entering handle_client, discarded {} idle events so far", idle_event_count);
                     self.handle_client(conn, &mut event_rx, &mut capture, &mut shutdown_rx).await;
+                    info!("[server] === CLIENT DISCONNECTED, back to waiting ===");
                 }
                 Some(_event) = event_rx.recv() => {
-                    // Events while no client connected — discard
+                    idle_event_count += 1;
+                    if idle_event_count % 500 == 1 {
+                        debug!("[server] idle event #{} (no client connected, discarding)", idle_event_count);
+                    }
                 }
             }
         }
 
+        info!("[server] stopping capture...");
         capture.stop()?;
         server.close();
+        info!("[server] stopped");
         Ok(())
     }
 
@@ -100,19 +117,22 @@ impl Server {
         shutdown_rx: &mut watch::Receiver<bool>,
     ) {
         let addr = conn.remote_address();
+        info!("[server::handle] waiting for bi-directional stream from {}...", addr);
 
         let mut stream = match conn.accept_stream().await {
-            Ok(s) => s,
+            Ok(s) => {
+                info!("[server::handle] stream accepted from {}", addr);
+                s
+            }
             Err(e) => {
-                error!("failed to accept stream from {}: {}", addr, e);
+                error!("[server::handle] FAILED to accept stream from {}: {}", addr, e);
                 return;
             }
         };
 
-        info!("stream established with {}", addr);
+        info!("[server::handle] stream established with {} — entering event loop", addr);
 
         // Determine which screen edge triggers switch to this client.
-        // Use config if available, otherwise default to Right.
         let client_position = self
             .config
             .clients
@@ -120,62 +140,81 @@ impl Server {
             .map(|c| c.position)
             .unwrap_or(vesa_event::Position::Right);
 
+        info!("[server::handle] client_position={:?}, edge_threshold={}", client_position, EDGE_PUSH_THRESHOLD);
+
         let mut edge_push_count: u32 = 0;
+        let mut total_events: u64 = 0;
+        let mut forwarded_events: u64 = 0;
 
         loop {
             tokio::select! {
                 _ = shutdown_rx.changed() => {
                     if *shutdown_rx.borrow() {
+                        info!("[server::handle] shutdown during client session");
                         break;
                     }
                 }
                 Some(event) = event_rx.recv() => {
+                    total_events += 1;
+                    if total_events % 200 == 1 {
+                        debug!("[server::handle] event #{}, state={:?}", total_events, self.state);
+                    }
+
                     match self.state {
                         ServerState::Idle => {
                             // Check for edge push to enter capture mode
                             if let Some(push_dir) = detect_edge_push(&event) {
                                 if push_dir == client_position {
                                     edge_push_count += 1;
-                                    debug!("edge push {:?} count={}/{}", push_dir, edge_push_count, EDGE_PUSH_THRESHOLD);
+                                    debug!(
+                                        "[server::edge] push {:?} count={}/{} (event: dx/dy from {:?})",
+                                        push_dir, edge_push_count, EDGE_PUSH_THRESHOLD, event
+                                    );
                                     if edge_push_count >= EDGE_PUSH_THRESHOLD {
+                                        info!("[server::edge] THRESHOLD REACHED — entering capture mode");
                                         self.enter_capture(client_position, capture, &mut stream).await;
                                         edge_push_count = 0;
                                     }
                                 } else {
                                     if edge_push_count > 0 {
-                                        debug!("edge push reset: got {:?}, wanted {:?}", push_dir, client_position);
+                                        debug!(
+                                            "[server::edge] reset: got {:?}, wanted {:?} (count was {})",
+                                            push_dir, client_position, edge_push_count
+                                        );
                                     }
                                     edge_push_count = 0;
                                 }
                             } else if matches!(event, InputEvent::PointerMotion { .. }) {
-                                // Only reset on motion events that aren't edge pushes
                                 if edge_push_count > 0 {
-                                    debug!("edge push reset: non-directional motion {:?}", event);
+                                    debug!("[server::edge] reset: non-directional motion (count was {})", edge_push_count);
                                 }
                                 edge_push_count = 0;
                             }
-                            // Non-motion events (key, modifier, scroll) don't reset counter
                         }
                         ServerState::Capturing { .. } => {
                             // Check release hotkey
                             if is_release_hotkey(&event) {
+                                info!("[server::capture] release hotkey pressed, leaving capture");
                                 self.leave_capture(capture, &mut stream).await;
                                 continue;
                             }
 
                             // Forward event to client via datagram
+                            forwarded_events += 1;
                             let msg = Message::from_input_event(&event);
                             if let Err(e) = conn.send_datagram(&msg) {
-                                warn!("failed to send datagram: {}", e);
+                                warn!("[server::capture] failed to send datagram #{}: {}", forwarded_events, e);
+                            } else if forwarded_events % 100 == 1 {
+                                debug!("[server::capture] forwarded event #{}: {:?}", forwarded_events, msg);
                             }
                         }
                     }
                 }
                 result = conn.read_datagram() => {
                     match result {
-                        Ok(msg) => debug!("received datagram from client: {:?}", msg),
+                        Ok(msg) => debug!("[server::handle] received datagram from client: {:?}", msg),
                         Err(e) => {
-                            warn!("client {} disconnected: {}", addr, e);
+                            warn!("[server::handle] client {} disconnected: {}", addr, e);
                             if self.state != ServerState::Idle {
                                 self.leave_capture(capture, &mut stream).await;
                             }
@@ -186,6 +225,10 @@ impl Server {
             }
         }
 
+        info!(
+            "[server::handle] session ended: total_events={}, forwarded={}",
+            total_events, forwarded_events
+        );
         conn.close();
     }
 
@@ -195,15 +238,18 @@ impl Server {
         capture: &mut Box<dyn vesa_capture::InputCapture>,
         stream: &mut VesaStream,
     ) {
+        info!("[server::capture] >>> ENTERING capture mode, target={:?}", target);
         self.state = ServerState::Capturing { target };
         capture.set_capturing(true);
+        debug!("[server::capture] set_capturing(true), sending Enter message...");
 
-        // Send Enter message to client via reliable stream
         if let Err(e) = stream.send(&Message::Enter(target)).await {
-            warn!("failed to send Enter message: {}", e);
+            warn!("[server::capture] failed to send Enter message: {}", e);
+        } else {
+            debug!("[server::capture] Enter message sent successfully");
         }
 
-        info!("capturing input → {:?}", target);
+        info!("[server::capture] now capturing input → {:?}", target);
     }
 
     async fn leave_capture(
@@ -211,15 +257,18 @@ impl Server {
         capture: &mut Box<dyn vesa_capture::InputCapture>,
         stream: &mut VesaStream,
     ) {
+        info!("[server::capture] <<< LEAVING capture mode");
         self.state = ServerState::Idle;
         capture.set_capturing(false);
+        debug!("[server::capture] set_capturing(false), sending Leave message...");
 
-        // Send Leave message to client via reliable stream
         if let Err(e) = stream.send(&Message::Leave).await {
-            warn!("failed to send Leave message: {}", e);
+            warn!("[server::capture] failed to send Leave message: {}", e);
+        } else {
+            debug!("[server::capture] Leave message sent successfully");
         }
 
-        info!("released input capture");
+        info!("[server::capture] input capture released");
     }
 }
 

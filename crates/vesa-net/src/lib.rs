@@ -4,7 +4,7 @@ use cert::{CertError, Identity};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::{debug, error, info, trace};
 use vesa_proto::{DecodeError, Message};
 
 #[derive(Debug, Error)]
@@ -57,14 +57,27 @@ impl VesaServer {
     }
 
     pub async fn accept(&self) -> Option<VesaConnection> {
+        debug!("[net::server] waiting for incoming connection...");
         let incoming = self.endpoint.accept().await?;
+        debug!(
+            "[net::server] incoming connection received, performing handshake..."
+        );
         match incoming.await {
             Ok(conn) => {
-                info!("accepted connection from {}", conn.remote_address());
+                info!(
+                    "[net::server] accepted connection from {}, stable_id={}",
+                    conn.remote_address(),
+                    conn.stable_id()
+                );
+                debug!(
+                    "[net::server] connection stats: rtt={:?}, max_datagram_size={:?}",
+                    conn.rtt(),
+                    conn.max_datagram_size()
+                );
                 Some(VesaConnection { conn })
             }
             Err(e) => {
-                error!("failed to accept connection: {}", e);
+                error!("[net::server] failed to accept connection: {}", e);
                 None
             }
         }
@@ -110,9 +123,20 @@ impl VesaClient {
         client_config.transport_config(Arc::new(VesaServer::transport_config()));
         endpoint.set_default_client_config(client_config);
 
-        info!("connecting to {}", server_addr);
-        let conn = endpoint.connect(server_addr, "vesa")?.await?;
-        info!("connected to {}", server_addr);
+        info!("[net::client] connecting to {}...", server_addr);
+        let connecting = endpoint.connect(server_addr, "vesa")?;
+        debug!("[net::client] QUIC handshake in progress...");
+        let conn = connecting.await?;
+        info!(
+            "[net::client] connected to {}, stable_id={}, rtt={:?}",
+            server_addr,
+            conn.stable_id(),
+            conn.rtt()
+        );
+        debug!(
+            "[net::client] max_datagram_size={:?}",
+            conn.max_datagram_size()
+        );
 
         Ok(VesaConnection { conn })
     }
@@ -125,6 +149,11 @@ pub struct VesaConnection {
 impl VesaConnection {
     pub fn send_datagram(&self, msg: &Message) -> Result<(), NetError> {
         let data = vesa_proto::encode(msg);
+        trace!(
+            "[net::conn] sending datagram: {:?} ({} bytes)",
+            msg,
+            data.len()
+        );
         self.conn.send_datagram(data.into())?;
         Ok(())
     }
@@ -132,16 +161,29 @@ impl VesaConnection {
     pub async fn read_datagram(&self) -> Result<Message, NetError> {
         let data = self.conn.read_datagram().await?;
         let msg = vesa_proto::decode(&data)?;
+        trace!("[net::conn] received datagram: {:?} ({} bytes)", msg, data.len());
         Ok(msg)
     }
 
     pub async fn open_stream(&self) -> Result<VesaStream, NetError> {
+        debug!("[net::conn] opening bi-directional stream...");
         let (send, recv) = self.conn.open_bi().await?;
+        debug!(
+            "[net::conn] bi-directional stream opened (send_id={}, recv_id={})",
+            send.id(),
+            recv.id()
+        );
         Ok(VesaStream { send, recv })
     }
 
     pub async fn accept_stream(&self) -> Result<VesaStream, NetError> {
+        debug!("[net::conn] waiting to accept bi-directional stream...");
         let (send, recv) = self.conn.accept_bi().await?;
+        debug!(
+            "[net::conn] bi-directional stream accepted (send_id={}, recv_id={})",
+            send.id(),
+            recv.id()
+        );
         Ok(VesaStream { send, recv })
     }
 
@@ -150,6 +192,7 @@ impl VesaConnection {
     }
 
     pub fn close(&self) {
+        debug!("[net::conn] closing connection to {}", self.conn.remote_address());
         self.conn.close(0u32.into(), b"done");
     }
 }
@@ -163,18 +206,23 @@ impl VesaStream {
     pub async fn send(&mut self, msg: &Message) -> Result<(), NetError> {
         let data = vesa_proto::encode(msg);
         let len = u8::try_from(data.len()).expect("message fits in u8");
+        debug!("[net::stream] sending message: {:?} ({} bytes)", msg, data.len());
         self.send.write_all(&[len]).await?;
         self.send.write_all(&data).await?;
+        debug!("[net::stream] message sent successfully");
         Ok(())
     }
 
     pub async fn recv(&mut self) -> Result<Message, NetError> {
+        trace!("[net::stream] waiting for message...");
         let mut len_buf = [0u8; 1];
         self.recv.read_exact(&mut len_buf).await?;
         let len = len_buf[0] as usize;
+        trace!("[net::stream] reading {} byte message body", len);
         let mut buf = vec![0u8; len];
         self.recv.read_exact(&mut buf).await?;
         let msg = vesa_proto::decode(&buf)?;
+        debug!("[net::stream] received message: {:?}", msg);
         Ok(msg)
     }
 }
