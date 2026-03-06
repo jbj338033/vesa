@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
             let config = ServerConfig {
                 bind_addr: bind,
                 clients: vec![],
-                release_hotkey: "ScrollLock".to_string(),
+                release_hotkey: "Escape".to_string(),
             };
             let cert_dir = config_dir.join("certs");
             let mut server = Server::new(config, cert_dir);

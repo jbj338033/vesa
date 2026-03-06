@@ -1,9 +1,13 @@
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
+use vesa_event::{InputEvent, Position};
 use vesa_net::VesaClient as NetClient;
 use vesa_proto::Message;
 
 use crate::config::ClientConfig;
+
+/// Same threshold as server for consistency.
+const EDGE_PUSH_THRESHOLD: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientState {
@@ -81,6 +85,13 @@ impl Client {
         let mut datagram_count: u64 = 0;
         let mut event_count: u64 = 0;
 
+        // The return edge is opposite to our position relative to the server.
+        // e.g. if we are to the Right of the server, pushing Left returns control.
+        let return_direction = self.config.position.opposite();
+        let mut edge_push_count: u32 = 0;
+
+        info!("[client] position={:?}, return_direction={:?}", self.config.position, return_direction);
+
         loop {
             tokio::select! {
                 _ = shutdown_rx.changed() => {
@@ -99,6 +110,32 @@ impl Client {
                             if let Some(event) = msg.to_input_event() {
                                 if self.state == ClientState::Active {
                                     event_count += 1;
+
+                                    // Detect return edge push before emulating
+                                    if let Some(dir) = detect_edge_push(&event) {
+                                        if dir == return_direction {
+                                            edge_push_count += 1;
+                                            debug!(
+                                                "[client::edge] return push {:?} count={}/{}",
+                                                dir, edge_push_count, EDGE_PUSH_THRESHOLD
+                                            );
+                                            if edge_push_count >= EDGE_PUSH_THRESHOLD {
+                                                info!("[client::edge] THRESHOLD — requesting return to server");
+                                                if let Err(e) = stream.send(&Message::Leave).await {
+                                                    warn!("[client] failed to send Leave: {}", e);
+                                                }
+                                                self.state = ClientState::Connected;
+                                                edge_push_count = 0;
+                                                event_count = 0;
+                                                continue;
+                                            }
+                                        } else {
+                                            edge_push_count = 0;
+                                        }
+                                    } else if matches!(event, InputEvent::PointerMotion { .. }) {
+                                        edge_push_count = 0;
+                                    }
+
                                     if let Err(e) = emulate.emit(event) {
                                         warn!("[client] failed to emit event #{}: {}", event_count, e);
                                     }
@@ -118,11 +155,13 @@ impl Client {
                         Ok(Message::Enter(pos)) => {
                             info!("[client] >>> ENTER from {:?} — activating input emulation", pos);
                             self.state = ClientState::Active;
+                            edge_push_count = 0;
                         }
                         Ok(Message::Leave) => {
                             info!("[client] <<< LEAVE — deactivating input emulation (emitted {} events)", event_count);
                             self.state = ClientState::Connected;
                             event_count = 0;
+                            edge_push_count = 0;
                         }
                         Ok(msg) => {
                             debug!("[client] received stream message: {:?}", msg);
@@ -141,5 +180,45 @@ impl Client {
         conn.close();
         self.state = ClientState::Disconnected;
         Ok(())
+    }
+}
+
+/// Detect directional edge push from a pointer motion event.
+fn detect_edge_push(event: &InputEvent) -> Option<Position> {
+    if let InputEvent::PointerMotion { dx, dy, .. } = event {
+        let adx = dx.abs();
+        let ady = dy.abs();
+
+        if adx < 0.5 && ady < 0.5 {
+            return None;
+        }
+
+        if adx > ady * 1.5 {
+            return if *dx > 0.0 {
+                Some(Position::Right)
+            } else {
+                Some(Position::Left)
+            };
+        }
+
+        if ady > adx * 1.5 {
+            return if *dy > 0.0 {
+                Some(Position::Bottom)
+            } else {
+                Some(Position::Top)
+            };
+        }
+
+        if adx >= ady && *dx > 0.0 {
+            Some(Position::Right)
+        } else if adx >= ady {
+            Some(Position::Left)
+        } else if *dy > 0.0 {
+            Some(Position::Bottom)
+        } else {
+            Some(Position::Top)
+        }
+    } else {
+        None
     }
 }

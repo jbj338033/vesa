@@ -29,10 +29,12 @@ pub enum ServerError {
 /// Threshold of consecutive edge-pushing motion events before switching.
 const EDGE_PUSH_THRESHOLD: u32 = 3;
 
-/// macOS keycode for ScrollLock (there isn't a standard one; use F15 = 0x71 = 113)
-/// Linux evdev KEY_SCROLLLOCK = 70
-const RELEASE_KEY_MACOS: u32 = 113;
-const RELEASE_KEY_EVDEV: u32 = 70;
+/// Release hotkey: Escape
+/// macOS keycode for Escape = 53
+/// Linux evdev KEY_ESC = 1
+/// Windows vk_to_evdev maps VK_ESCAPE(0x1B) → 1
+const RELEASE_KEY_MACOS: u32 = 53;
+const RELEASE_KEY_EVDEV: u32 = 1;
 
 pub struct Server {
     config: ServerConfig,
@@ -227,6 +229,26 @@ impl Server {
                         }
                     }
                 }
+                result = stream.recv() => {
+                    match result {
+                        Ok(Message::Leave) => {
+                            info!("[server::handle] client requested return (edge push)");
+                            if self.state != ServerState::Idle {
+                                self.leave_capture(capture, &mut stream).await;
+                            }
+                        }
+                        Ok(msg) => {
+                            debug!("[server::handle] received stream message from client: {:?}", msg);
+                        }
+                        Err(e) => {
+                            warn!("[server::handle] stream read error: {}", e);
+                            if self.state != ServerState::Idle {
+                                self.leave_capture(capture, &mut stream).await;
+                            }
+                            break;
+                        }
+                    }
+                }
                 result = conn.read_datagram() => {
                     match result {
                         Ok(msg) => debug!("[server::handle] received datagram from client: {:?}", msg),
@@ -341,7 +363,7 @@ fn detect_edge_push(event: &InputEvent) -> Option<Position> {
     None
 }
 
-/// Check if an input event is the release hotkey (ScrollLock).
+/// Check if an input event is the release hotkey (Escape).
 fn is_release_hotkey(event: &InputEvent) -> bool {
     if let InputEvent::KeyboardKey { key, state, .. } = event {
         if matches!(state, vesa_event::KeyState::Press) {
