@@ -111,13 +111,19 @@ impl Client {
                                 if self.state == ClientState::Active {
                                     event_count += 1;
 
-                                    // Detect return edge push before emulating
-                                    if let Some(dir) = detect_edge_push(&event) {
+                                    // Check edge push AFTER emulating so cursor position reflects this event
+                                    if let Err(e) = emulate.emit(event) {
+                                        warn!("[client] failed to emit event #{}: {}", event_count, e);
+                                    }
+
+                                    let (cx, cy) = emulate.cursor_position();
+                                    let (sx, sy, sw, sh) = emulate.screen_bounds();
+                                    if let Some(dir) = detect_edge_push(&event, cx, cy, sx, sy, sw, sh) {
                                         if dir == return_direction {
                                             edge_push_count += 1;
                                             debug!(
-                                                "[client::edge] return push {:?} count={}/{}",
-                                                dir, edge_push_count, EDGE_PUSH_THRESHOLD
+                                                "[client::edge] return push {:?} count={}/{} cursor=({:.0},{:.0})",
+                                                dir, edge_push_count, EDGE_PUSH_THRESHOLD, cx, cy
                                             );
                                             if edge_push_count >= EDGE_PUSH_THRESHOLD {
                                                 info!("[client::edge] THRESHOLD — requesting return to server");
@@ -134,10 +140,6 @@ impl Client {
                                         }
                                     } else if matches!(event, InputEvent::PointerMotion { .. }) {
                                         edge_push_count = 0;
-                                    }
-
-                                    if let Err(e) = emulate.emit(event) {
-                                        warn!("[client] failed to emit event #{}: {}", event_count, e);
                                     }
                                 } else {
                                     debug!("[client] ignoring event, state={:?}", self.state);
@@ -183,8 +185,18 @@ impl Client {
     }
 }
 
-/// Detect directional edge push from a pointer motion event.
-fn detect_edge_push(event: &InputEvent) -> Option<Position> {
+const EDGE_MARGIN: f64 = 2.0;
+
+/// Detect if cursor is at a screen edge and being pushed toward it.
+fn detect_edge_push(
+    event: &InputEvent,
+    cursor_x: f64,
+    cursor_y: f64,
+    screen_x: f64,
+    screen_y: f64,
+    screen_w: f64,
+    screen_h: f64,
+) -> Option<Position> {
     if let InputEvent::PointerMotion { dx, dy, .. } = event {
         let adx = dx.abs();
         let ady = dy.abs();
@@ -193,32 +205,23 @@ fn detect_edge_push(event: &InputEvent) -> Option<Position> {
             return None;
         }
 
-        if adx > ady * 1.5 {
-            return if *dx > 0.0 {
-                Some(Position::Right)
-            } else {
-                Some(Position::Left)
-            };
-        }
+        let at_right = cursor_x >= screen_x + screen_w - EDGE_MARGIN;
+        let at_left = cursor_x <= screen_x + EDGE_MARGIN;
+        let at_bottom = cursor_y >= screen_y + screen_h - EDGE_MARGIN;
+        let at_top = cursor_y <= screen_y + EDGE_MARGIN;
 
-        if ady > adx * 1.5 {
-            return if *dy > 0.0 {
-                Some(Position::Bottom)
-            } else {
-                Some(Position::Top)
-            };
+        if at_right && *dx > 0.0 && adx > ady {
+            return Some(Position::Right);
         }
-
-        if adx >= ady && *dx > 0.0 {
-            Some(Position::Right)
-        } else if adx >= ady {
-            Some(Position::Left)
-        } else if *dy > 0.0 {
-            Some(Position::Bottom)
-        } else {
-            Some(Position::Top)
+        if at_left && *dx < 0.0 && adx > ady {
+            return Some(Position::Left);
         }
-    } else {
-        None
+        if at_bottom && *dy > 0.0 && ady > adx {
+            return Some(Position::Bottom);
+        }
+        if at_top && *dy < 0.0 && ady > adx {
+            return Some(Position::Top);
+        }
     }
+    None
 }

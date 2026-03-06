@@ -8,6 +8,7 @@ use core_graphics::event::{
     CGEvent, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventTapProxy,
     CGEventType, CallbackResult, EventField,
 };
+use core_graphics::geometry::CGPoint;
 use tokio::sync::mpsc;
 use vesa_event::{Axis, ButtonState, InputEvent, KeyState};
 
@@ -305,14 +306,23 @@ impl InputCapture for MacOSCapture {
     }
 
     fn set_capturing(&mut self, capturing: bool) {
-        self.capturing.store(capturing, Ordering::Relaxed);
-
         let display = CGDisplay::main();
         if capturing {
+            // Warp cursor to center BEFORE setting flag, so the warp event
+            // itself isn't suppressed and the cursor actually moves away from the edge.
+            let bounds = display.bounds();
+            let center = CGPoint::new(
+                bounds.origin.x + bounds.size.width / 2.0,
+                bounds.origin.y + bounds.size.height / 2.0,
+            );
+            let _ = CGDisplay::warp_mouse_cursor_position(center);
+
+            self.capturing.store(true, Ordering::Relaxed);
             let _ = CGDisplay::associate_mouse_and_mouse_cursor_position(false);
             let _ = display.hide_cursor();
-            tracing::debug!("cursor hidden, mouse disassociated");
+            tracing::debug!("cursor warped to center, hidden, mouse disassociated");
         } else {
+            self.capturing.store(false, Ordering::Relaxed);
             let _ = CGDisplay::associate_mouse_and_mouse_cursor_position(true);
             let _ = display.show_cursor();
             tracing::debug!("cursor shown, mouse reassociated");
