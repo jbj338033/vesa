@@ -6,8 +6,8 @@ members = [
     "crates/vesa-emulate",
     "crates/vesa-net",
     "crates/vesa-core",
-    "crates/vesa-cli",
 ]
+exclude = ["src-tauri"]
 resolver = "2"
 
 [workspace.package]
@@ -31,9 +31,6 @@ keycode = "1"
 # Config
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
-
-# CLI
-clap = { version = "4", features = ["derive"] }
 
 # Error + Logging
 thiserror = "2"
