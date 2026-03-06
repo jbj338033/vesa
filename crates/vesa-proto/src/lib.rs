@@ -3,7 +3,9 @@ use vesa_event::{Axis, ButtonState, InputEvent, KeyState, Position};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Message {
     Enter(Position),
-    Leave,
+    /// Leave with normalized cursor y-ratio (0.0–1.0) so the returning side
+    /// can place the cursor at the correct vertical position on the return edge.
+    Leave(f64),
     Ack(u32),
     PointerMotion { time: u32, dx: f64, dy: f64 },
     PointerButton { time: u32, button: u32, state: u32 },
@@ -12,6 +14,7 @@ pub enum Message {
     KeyboardModifiers { depressed: u32, latched: u32, locked: u32, group: u32 },
     Ping,
     Pong,
+    AssignPosition(Position),
 }
 
 const TAG_ENTER: u8 = 0x01;
@@ -24,6 +27,7 @@ const TAG_KEYBOARD_KEY: u8 = 0x07;
 const TAG_KEYBOARD_MODIFIERS: u8 = 0x08;
 const TAG_PING: u8 = 0x09;
 const TAG_PONG: u8 = 0x0A;
+const TAG_ASSIGN_POSITION: u8 = 0x0B;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
@@ -40,7 +44,12 @@ pub enum DecodeError {
 pub fn encode(msg: &Message) -> Vec<u8> {
     match *msg {
         Message::Enter(pos) => vec![TAG_ENTER, pos.to_byte()],
-        Message::Leave => vec![TAG_LEAVE],
+        Message::Leave(y_ratio) => {
+            let mut buf = Vec::with_capacity(9);
+            buf.push(TAG_LEAVE);
+            buf.extend_from_slice(&y_ratio.to_be_bytes());
+            buf
+        }
         Message::Ack(seq) => {
             let mut buf = Vec::with_capacity(5);
             buf.push(TAG_ACK);
@@ -90,6 +99,7 @@ pub fn encode(msg: &Message) -> Vec<u8> {
         }
         Message::Ping => vec![TAG_PING],
         Message::Pong => vec![TAG_PONG],
+        Message::AssignPosition(pos) => vec![TAG_ASSIGN_POSITION, pos.to_byte()],
     }
 }
 
@@ -112,7 +122,11 @@ pub fn decode(buf: &[u8]) -> Result<Message, DecodeError> {
                 .ok_or(DecodeError::InvalidPosition(buf[1]))?;
             Ok(Message::Enter(pos))
         }
-        TAG_LEAVE => Ok(Message::Leave),
+        TAG_LEAVE => {
+            check_len(buf, 9)?;
+            let y_ratio = f64::from_be_bytes(buf[1..9].try_into().unwrap());
+            Ok(Message::Leave(y_ratio))
+        }
         TAG_ACK => {
             check_len(buf, 5)?;
             let seq = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
@@ -156,6 +170,12 @@ pub fn decode(buf: &[u8]) -> Result<Message, DecodeError> {
         }
         TAG_PING => Ok(Message::Ping),
         TAG_PONG => Ok(Message::Pong),
+        TAG_ASSIGN_POSITION => {
+            check_len(buf, 2)?;
+            let pos = Position::from_byte(buf[1])
+                .ok_or(DecodeError::InvalidPosition(buf[1]))?;
+            Ok(Message::AssignPosition(pos))
+        }
         tag => Err(DecodeError::UnknownTag(tag)),
     }
 }
@@ -226,7 +246,9 @@ mod tests {
 
     #[test]
     fn leave() {
-        roundtrip(Message::Leave);
+        roundtrip(Message::Leave(0.0));
+        roundtrip(Message::Leave(0.5));
+        roundtrip(Message::Leave(1.0));
     }
 
     #[test]
@@ -273,6 +295,14 @@ mod tests {
     }
 
     #[test]
+    fn assign_position() {
+        roundtrip(Message::AssignPosition(Position::Left));
+        roundtrip(Message::AssignPosition(Position::Right));
+        roundtrip(Message::AssignPosition(Position::Top));
+        roundtrip(Message::AssignPosition(Position::Bottom));
+    }
+
+    #[test]
     fn decode_empty() {
         assert!(matches!(decode(&[]), Err(DecodeError::Empty)));
     }
@@ -306,16 +336,17 @@ mod tests {
     #[test]
     fn non_input_messages_return_none() {
         assert!(Message::Enter(Position::Left).to_input_event().is_none());
-        assert!(Message::Leave.to_input_event().is_none());
+        assert!(Message::Leave(0.5).to_input_event().is_none());
         assert!(Message::Ack(0).to_input_event().is_none());
         assert!(Message::Ping.to_input_event().is_none());
         assert!(Message::Pong.to_input_event().is_none());
+        assert!(Message::AssignPosition(Position::Right).to_input_event().is_none());
     }
 
     #[test]
     fn encoded_sizes() {
         assert_eq!(encode(&Message::Enter(Position::Left)).len(), 2);
-        assert_eq!(encode(&Message::Leave).len(), 1);
+        assert_eq!(encode(&Message::Leave(0.0)).len(), 9);
         assert_eq!(encode(&Message::Ack(0)).len(), 5);
         assert_eq!(encode(&Message::PointerMotion { time: 0, dx: 0.0, dy: 0.0 }).len(), 21);
         assert_eq!(encode(&Message::PointerButton { time: 0, button: 0, state: 0 }).len(), 13);
@@ -324,5 +355,6 @@ mod tests {
         assert_eq!(encode(&Message::KeyboardModifiers { depressed: 0, latched: 0, locked: 0, group: 0 }).len(), 17);
         assert_eq!(encode(&Message::Ping).len(), 1);
         assert_eq!(encode(&Message::Pong).len(), 1);
+        assert_eq!(encode(&Message::AssignPosition(Position::Right)).len(), 2);
     }
 }
