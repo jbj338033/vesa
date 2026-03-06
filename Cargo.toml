@@ -1,0 +1,44 @@
+[workspace]
+members = [
+    "crates/vesa-event",
+    "crates/vesa-proto",
+    "crates/vesa-capture",
+    "crates/vesa-emulate",
+    "crates/vesa-net",
+    "crates/vesa-core",
+    "crates/vesa-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/jbj338033/vesa"
+authors = ["jbj338033"]
+rust-version = "1.85"
+
+[workspace.dependencies]
+# Runtime + Networking
+tokio = { version = "1", features = ["full"] }
+quinn = "0.11"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rcgen = "0.13"
+
+# Keycode conversion
+keycode = "1"
+
+# Config
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Error + Logging
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Utils
+bytes = "1"
