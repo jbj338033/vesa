@@ -158,11 +158,13 @@ pub async fn get_clients(
     let mut s = state.lock().await;
 
     // Check if client connection state has changed
-    if let Some(ref mut rx) = s.client_connected_rx {
-        // Non-blocking check for updates
-        if rx.has_changed().unwrap_or(false) {
-            s.client_connected = *rx.borrow_and_update();
-        }
+    let connected_update = s
+        .client_connected_rx
+        .as_mut()
+        .filter(|rx| rx.has_changed().unwrap_or(false))
+        .map(|rx| *rx.borrow_and_update());
+    if let Some(val) = connected_update {
+        s.client_connected = val;
     }
 
     if s.client_connected {
