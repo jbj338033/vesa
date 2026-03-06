@@ -1,0 +1,13 @@
+[package]
+name = "vesa-proto"
+description = "Binary protocol encode/decode for Vesa software KVM"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+vesa-event = { path = "../vesa-event" }
+thiserror = { workspace = true }
