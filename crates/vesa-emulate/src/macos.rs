@@ -193,4 +193,19 @@ impl InputEmulate for MacOSEmulate {
     fn destroy(&mut self) {
         tracing::debug!("MacOSEmulate destroyed");
     }
+
+    fn cursor_position(&self) -> (f64, f64) {
+        (self.mouse_x, self.mouse_y)
+    }
+
+    fn screen_bounds(&self) -> (f64, f64, f64, f64) {
+        let display = CGDisplay::main();
+        let bounds = display.bounds();
+        (
+            bounds.origin.x,
+            bounds.origin.y,
+            bounds.size.width,
+            bounds.size.height,
+        )
+    }
 }
