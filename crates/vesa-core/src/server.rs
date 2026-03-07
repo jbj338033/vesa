@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 use tokio::sync::{mpsc, watch};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use vesa_event::{InputEvent, Position};
 use vesa_net::cert::Identity;
 use vesa_net::{VesaConnection, VesaServer as NetServer, VesaStream};
 use vesa_proto::Message;
 
 use crate::config::ServerConfig;
+use crate::edge::{EDGE_PUSH_THRESHOLD, detect_edge_push};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerState {
@@ -26,13 +27,6 @@ pub enum ServerError {
     NoClients,
 }
 
-/// Threshold of consecutive edge-pushing motion events before switching.
-const EDGE_PUSH_THRESHOLD: u32 = 3;
-
-/// Release hotkey: Escape
-/// macOS keycode for Escape = 53
-/// Linux evdev KEY_ESC = 1
-/// Windows vk_to_evdev maps VK_ESCAPE(0x1B) → 1
 const RELEASE_KEY_MACOS: u32 = 53;
 const RELEASE_KEY_EVDEV: u32 = 1;
 
@@ -66,7 +60,6 @@ impl Server {
 
     pub async fn run(&mut self, mut shutdown_rx: watch::Receiver<bool>) -> Result<(), ServerError> {
         info!("[server] starting, bind_addr={}", self.config.bind_addr);
-        debug!("[server] config: {:?}", self.config);
 
         let identity = Identity::load_or_generate(&self.cert_dir)?;
         info!(
@@ -77,13 +70,9 @@ impl Server {
         let server = NetServer::bind(self.config.bind_addr, &identity)?;
         info!("[server] listening on {}", self.config.bind_addr);
 
-        debug!("[server] creating input capture backend...");
         let mut capture = vesa_capture::create_capture()?;
-        info!("[server] input capture backend created");
-
-        debug!("[server] starting input capture...");
         let mut event_rx = capture.start()?;
-        info!("[server] input capture started, waiting for connections...");
+        debug!("[server] input capture started");
 
         let mut idle_event_count: u64 = 0;
 
@@ -104,13 +93,12 @@ impl Server {
                 Some(_event) = event_rx.recv() => {
                     idle_event_count += 1;
                     if idle_event_count % 500 == 1 {
-                        debug!("[server] idle event #{} (no client connected, discarding)", idle_event_count);
+                        trace!("[server] idle event #{} (no client connected, discarding)", idle_event_count);
                     }
                 }
             }
         }
 
-        info!("[server] stopping capture...");
         capture.stop()?;
         server.close();
         info!("[server] stopped");
@@ -125,14 +113,10 @@ impl Server {
         shutdown_rx: &mut watch::Receiver<bool>,
     ) {
         let addr = conn.remote_address();
-        info!(
-            "[server::handle] waiting for bi-directional stream from {}...",
-            addr
-        );
 
         let mut stream = match conn.accept_stream().await {
             Ok(s) => {
-                info!("[server::handle] stream accepted from {}", addr);
+                debug!("[server::handle] stream accepted from {}", addr);
                 s
             }
             Err(e) => {
@@ -144,7 +128,6 @@ impl Server {
             }
         };
 
-        // Read the client's handshake ping and reply with pong
         match stream.recv().await {
             Ok(Message::Ping) => {
                 debug!("[server::handle] received handshake ping, sending pong");
@@ -161,7 +144,6 @@ impl Server {
             }
         }
 
-        // Send AssignPosition after handshake
         let client_position = *self.position_rx.borrow();
         info!(
             "[server::handle] assigning position {:?} to client",
@@ -172,16 +154,11 @@ impl Server {
             return;
         }
 
-        // Notify UI that a client is connected
         let _ = self.client_connected_tx.send(true);
 
         info!(
-            "[server::handle] stream established with {} — entering event loop",
-            addr
-        );
-        info!(
-            "[server::handle] client_position={:?}, edge_threshold={}",
-            client_position, EDGE_PUSH_THRESHOLD
+            "[server::handle] session started with {}, position={:?}",
+            addr, client_position
         );
 
         let mut client_position = client_position;
@@ -210,8 +187,8 @@ impl Server {
                 }
                 Some(event) = event_rx.recv() => {
                     total_events += 1;
-                    if total_events % 200 == 1 {
-                        debug!("[server::handle] event #{}, state={:?}", total_events, self.state);
+                    if total_events % 500 == 1 {
+                        trace!("[server::handle] event #{}, state={:?}", total_events, self.state);
                     }
 
                     match self.state {
@@ -222,9 +199,9 @@ impl Server {
                             if let Some(push_dir) = detect_edge_push(&event, cx, cy, sx, sy, sw, sh) {
                                 if push_dir == client_position {
                                     edge_push_count += 1;
-                                    debug!(
-                                        "[server::edge] push {:?} count={}/{} cursor=({:.0},{:.0}) screen=({:.0},{:.0},{:.0},{:.0})",
-                                        push_dir, edge_push_count, EDGE_PUSH_THRESHOLD, cx, cy, sx, sy, sw, sh
+                                    trace!(
+                                        "[server::edge] push {:?} count={}/{} cursor=({:.0},{:.0})",
+                                        push_dir, edge_push_count, EDGE_PUSH_THRESHOLD, cx, cy
                                     );
                                     if edge_push_count >= EDGE_PUSH_THRESHOLD {
                                         info!("[server::edge] THRESHOLD REACHED — entering capture mode");
@@ -232,36 +209,25 @@ impl Server {
                                         edge_push_count = 0;
                                     }
                                 } else {
-                                    if edge_push_count > 0 {
-                                        debug!(
-                                            "[server::edge] reset: got {:?}, wanted {:?} (count was {})",
-                                            push_dir, client_position, edge_push_count
-                                        );
-                                    }
                                     edge_push_count = 0;
                                 }
                             } else if matches!(event, InputEvent::PointerMotion { .. }) {
-                                if edge_push_count > 0 {
-                                    debug!("[server::edge] reset: non-directional motion (count was {})", edge_push_count);
-                                }
                                 edge_push_count = 0;
                             }
                         }
                         ServerState::Capturing { .. } => {
-                            // Check release hotkey
                             if is_release_hotkey(&event) {
                                 info!("[server::capture] release hotkey pressed, leaving capture");
                                 self.leave_capture(capture, &mut stream, 0.5).await;
                                 continue;
                             }
 
-                            // Forward event to client via datagram
                             forwarded_events += 1;
                             let msg = Message::from_input_event(&event);
                             if let Err(e) = conn.send_datagram(&msg) {
                                 warn!("[server::capture] failed to send datagram #{}: {}", forwarded_events, e);
-                            } else if forwarded_events % 100 == 1 {
-                                debug!("[server::capture] forwarded event #{}: {:?}", forwarded_events, msg);
+                            } else if forwarded_events % 500 == 1 {
+                                trace!("[server::capture] forwarded event #{}: {:?}", forwarded_events, msg);
                             }
                         }
                     }
@@ -301,7 +267,6 @@ impl Server {
             }
         }
 
-        // Notify UI that client disconnected
         let _ = self.client_connected_tx.send(false);
 
         info!(
@@ -318,20 +283,15 @@ impl Server {
         stream: &mut VesaStream,
     ) {
         info!(
-            "[server::capture] >>> ENTERING capture mode, target={:?}",
+            "[server::capture] entering capture mode, target={:?}",
             target
         );
         self.state = ServerState::Capturing { target };
         capture.set_capturing(true);
-        debug!("[server::capture] set_capturing(true), sending Enter message...");
 
         if let Err(e) = stream.send(&Message::Enter(target)).await {
             warn!("[server::capture] failed to send Enter message: {}", e);
-        } else {
-            debug!("[server::capture] Enter message sent successfully");
         }
-
-        info!("[server::capture] now capturing input → {:?}", target);
     }
 
     async fn leave_capture(
@@ -340,12 +300,6 @@ impl Server {
         stream: &mut VesaStream,
         y_ratio: f64,
     ) {
-        info!(
-            "[server::capture] <<< LEAVING capture mode, y_ratio={:.3}",
-            y_ratio
-        );
-
-        // Compute the cursor warp position on the return edge BEFORE releasing capture
         let target = match &self.state {
             ServerState::Capturing { target } => *target,
             _ => Position::Right,
@@ -358,7 +312,6 @@ impl Server {
             Position::Bottom => sx + sw * 0.5,
             Position::Top => sx + sw * 0.5,
         };
-        // For top/bottom, also apply y from the edge
         let warp_y = match target {
             Position::Top => sy + 1.0,
             Position::Bottom => sy + sh - 1.0,
@@ -368,71 +321,21 @@ impl Server {
         self.state = ServerState::Idle;
         capture.set_capturing(false);
         capture.warp_cursor(warp_x, warp_y);
-        debug!(
-            "[server::capture] cursor warped to ({:.0},{:.0}), sending Leave message...",
-            warp_x, warp_y
-        );
 
         if let Err(e) = stream.send(&Message::Leave(y_ratio)).await {
             warn!("[server::capture] failed to send Leave message: {}", e);
-        } else {
-            debug!("[server::capture] Leave message sent successfully");
         }
 
-        info!("[server::capture] input capture released");
+        info!(
+            "[server::capture] leaving capture mode, y_ratio={:.3}",
+            y_ratio
+        );
     }
 }
 
-/// Pixels from screen edge within which we consider the cursor "at the edge".
-const EDGE_MARGIN: f64 = 2.0;
-
-/// Detect if a mouse motion event is pushing against a screen edge.
-/// Requires: (1) cursor is within EDGE_MARGIN of the screen boundary AND
-/// (2) the delta continues pushing toward that boundary.
-fn detect_edge_push(
-    event: &InputEvent,
-    cursor_x: f64,
-    cursor_y: f64,
-    screen_x: f64,
-    screen_y: f64,
-    screen_w: f64,
-    screen_h: f64,
-) -> Option<Position> {
-    if let InputEvent::PointerMotion { dx, dy, .. } = event {
-        let adx = dx.abs();
-        let ady = dy.abs();
-
-        if adx < 0.5 && ady < 0.5 {
-            return None;
-        }
-
-        // Check if cursor is at each edge and delta pushes toward it
-        let at_right = cursor_x >= screen_x + screen_w - EDGE_MARGIN;
-        let at_left = cursor_x <= screen_x + EDGE_MARGIN;
-        let at_bottom = cursor_y >= screen_y + screen_h - EDGE_MARGIN;
-        let at_top = cursor_y <= screen_y + EDGE_MARGIN;
-
-        if at_right && *dx > 0.0 && adx > ady {
-            return Some(Position::Right);
-        }
-        if at_left && *dx < 0.0 && adx > ady {
-            return Some(Position::Left);
-        }
-        if at_bottom && *dy > 0.0 && ady > adx {
-            return Some(Position::Bottom);
-        }
-        if at_top && *dy < 0.0 && ady > adx {
-            return Some(Position::Top);
-        }
-    }
-    None
-}
-
-/// Check if an input event is the release hotkey (Escape).
 fn is_release_hotkey(event: &InputEvent) -> bool {
     if let InputEvent::KeyboardKey { key, state, .. } = event {
         if matches!(state, vesa_event::KeyState::Press) {
-            // Accept both macOS keycode and evdev code for ScrollLock
             return *key == RELEASE_KEY_MACOS || *key == RELEASE_KEY_EVDEV;
         }
     }

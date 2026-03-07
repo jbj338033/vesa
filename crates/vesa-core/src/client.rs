@@ -1,16 +1,13 @@
 use tokio::sync::watch;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use vesa_event::{InputEvent, Position};
 use vesa_net::VesaClient as NetClient;
 use vesa_proto::Message;
 
 use crate::config::ClientConfig;
+use crate::edge::{EDGE_PUSH_THRESHOLD, detect_edge_push};
 
-/// Default position used before server assigns one.
 const DEFAULT_POSITION: Position = Position::Right;
-
-/// Same threshold as server for consistency.
-const EDGE_PUSH_THRESHOLD: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientState {
@@ -56,16 +53,12 @@ impl Client {
             self.config.server_addr
         );
 
-        debug!("[client] creating emulate backend...");
         let mut emulate = vesa_emulate::create_emulate()?;
-        info!("[client] emulate backend created successfully");
+        debug!("[client] emulate backend created");
 
-        debug!("[client] opening bi-directional stream to server...");
         let mut stream = conn.open_stream().await?;
-        info!("[client] stream opened, sending initial handshake...");
+        debug!("[client] stream opened, sending handshake...");
 
-        // Send a Ping to materialize the QUIC stream — open_bi() is local-only
-        // and the server's accept_bi() won't fire until data is actually sent.
         stream.send(&Message::Ping).await.map_err(|e| {
             error!("[client] failed to send handshake ping: {}", e);
             ClientError::Net(e)
@@ -85,7 +78,6 @@ impl Client {
             }
         }
 
-        // Wait for server to assign our position
         let mut position = match stream.recv().await {
             Ok(Message::AssignPosition(pos)) => {
                 info!("[client] server assigned position: {:?}", pos);
@@ -107,8 +99,6 @@ impl Client {
         let mut datagram_count: u64 = 0;
         let mut event_count: u64 = 0;
 
-        // The return edge is opposite to our position relative to the server.
-        // e.g. if we are to the Right of the server, pushing Left returns control.
         let mut return_direction = position.opposite();
         let mut edge_push_count: u32 = 0;
 
@@ -129,14 +119,13 @@ impl Client {
                     match result {
                         Ok(msg) => {
                             datagram_count += 1;
-                            if datagram_count % 100 == 1 {
-                                debug!("[client] datagram #{}: {:?}, state={:?}", datagram_count, msg, self.state);
+                            if datagram_count % 500 == 1 {
+                                trace!("[client] datagram #{}: {:?}, state={:?}", datagram_count, msg, self.state);
                             }
                             if let Some(event) = msg.to_input_event() {
                                 if self.state == ClientState::Active {
                                     event_count += 1;
 
-                                    // Check edge push AFTER emulating so cursor position reflects this event
                                     if let Err(e) = emulate.emit(event) {
                                         warn!("[client] failed to emit event #{}: {}", event_count, e);
                                     }
@@ -146,7 +135,7 @@ impl Client {
                                     if let Some(dir) = detect_edge_push(&event, cx, cy, sx, sy, sw, sh) {
                                         if dir == return_direction {
                                             edge_push_count += 1;
-                                            debug!(
+                                            trace!(
                                                 "[client::edge] return push {:?} count={}/{} cursor=({:.0},{:.0})",
                                                 dir, edge_push_count, EDGE_PUSH_THRESHOLD, cx, cy
                                             );
@@ -168,8 +157,6 @@ impl Client {
                                     } else if matches!(event, InputEvent::PointerMotion { .. }) {
                                         edge_push_count = 0;
                                     }
-                                } else {
-                                    debug!("[client] ignoring event, state={:?}", self.state);
                                 }
                             }
                         }
@@ -219,45 +206,4 @@ impl Client {
         self.state = ClientState::Disconnected;
         Ok(())
     }
-}
-
-const EDGE_MARGIN: f64 = 2.0;
-
-/// Detect if cursor is at a screen edge and being pushed toward it.
-fn detect_edge_push(
-    event: &InputEvent,
-    cursor_x: f64,
-    cursor_y: f64,
-    screen_x: f64,
-    screen_y: f64,
-    screen_w: f64,
-    screen_h: f64,
-) -> Option<Position> {
-    if let InputEvent::PointerMotion { dx, dy, .. } = event {
-        let adx = dx.abs();
-        let ady = dy.abs();
-
-        if adx < 0.5 && ady < 0.5 {
-            return None;
-        }
-
-        let at_right = cursor_x >= screen_x + screen_w - EDGE_MARGIN;
-        let at_left = cursor_x <= screen_x + EDGE_MARGIN;
-        let at_bottom = cursor_y >= screen_y + screen_h - EDGE_MARGIN;
-        let at_top = cursor_y <= screen_y + EDGE_MARGIN;
-
-        if at_right && *dx > 0.0 && adx > ady {
-            return Some(Position::Right);
-        }
-        if at_left && *dx < 0.0 && adx > ady {
-            return Some(Position::Left);
-        }
-        if at_bottom && *dy > 0.0 && ady > adx {
-            return Some(Position::Bottom);
-        }
-        if at_top && *dy < 0.0 && ady > adx {
-            return Some(Position::Top);
-        }
-    }
-    None
 }

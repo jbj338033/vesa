@@ -1,5 +1,6 @@
 pub mod client;
 pub mod config;
+pub mod edge;
 pub mod server;
 
 pub use client::{Client, ClientError, ClientState};
