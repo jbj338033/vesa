@@ -27,6 +27,24 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Format check
         run: cargo fmt --check
 
@@ -36,5 +54,8 @@ jobs:
       - name: Test
         run: cargo test
 
-      - name: Build release
-        run: cargo build --release
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Build Tauri app
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
