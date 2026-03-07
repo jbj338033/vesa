@@ -172,7 +172,12 @@ impl InputEmulate for WindowsEmulate {
     }
 
     fn screen_bounds(&self) -> (f64, f64, f64, f64) {
-        (0.0, 0.0, f64::from(self.screen_width), f64::from(self.screen_height))
+        (
+            0.0,
+            0.0,
+            f64::from(self.screen_width),
+            f64::from(self.screen_height),
+        )
     }
 
     fn emit(&mut self, event: InputEvent) -> Result<(), EmulateError> {
