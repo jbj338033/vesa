@@ -12,8 +12,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::{EmulateError, InputEmulate};
 
-/// Map evdev key code to Windows scan code.
-/// For most keys, the evdev code matches the AT/PS2 scan code set 1.
 fn evdev_to_scancode(evdev: u32) -> u16 {
     evdev as u16
 }
@@ -55,7 +53,6 @@ impl WindowsEmulate {
         self.mouse_x = self.mouse_x.clamp(0, self.screen_width - 1);
         self.mouse_y = self.mouse_y.clamp(0, self.screen_height - 1);
 
-        // Convert to absolute coordinates (0..65535)
         let abs_x = (self.mouse_x * 65535) / self.screen_width.max(1);
         let abs_y = (self.mouse_y * 65535) / self.screen_height.max(1);
 

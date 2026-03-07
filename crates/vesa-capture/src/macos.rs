@@ -25,7 +25,6 @@ unsafe extern "C" {
     fn CGDisplayShowCursor(display: u32) -> i32;
 }
 
-/// kCGDirectMainDisplay = 0
 const MAIN_DISPLAY: u32 = 0;
 
 fn check_accessibility() -> bool {
@@ -63,7 +62,7 @@ fn convert_event(event_type: CGEventType, event: &CGEvent) -> Option<InputEvent>
         }
         CGEventType::LeftMouseDown => Some(InputEvent::PointerButton {
             time,
-            button: 0x110, // BTN_LEFT
+            button: 0x110,
             state: ButtonState::Press,
         }),
         CGEventType::LeftMouseUp => Some(InputEvent::PointerButton {
@@ -73,7 +72,7 @@ fn convert_event(event_type: CGEventType, event: &CGEvent) -> Option<InputEvent>
         }),
         CGEventType::RightMouseDown => Some(InputEvent::PointerButton {
             time,
-            button: 0x111, // BTN_RIGHT
+            button: 0x111,
             state: ButtonState::Press,
         }),
         CGEventType::RightMouseUp => Some(InputEvent::PointerButton {
@@ -84,7 +83,7 @@ fn convert_event(event_type: CGEventType, event: &CGEvent) -> Option<InputEvent>
         CGEventType::OtherMouseDown => {
             let btn = event.get_integer_value_field(EventField::MOUSE_EVENT_BUTTON_NUMBER) as u32;
             let button = match btn {
-                2 => 0x112, // BTN_MIDDLE
+                2 => 0x112,
                 n => 0x110 + n,
             };
             Some(InputEvent::PointerButton {
@@ -233,7 +232,6 @@ impl InputCapture for MacOSCapture {
                 CGEventTapOptions::Default,
                 events_of_interest,
                 move |_proxy: CGEventTapProxy, etype: CGEventType, event: &CGEvent| {
-                    // Track cursor position for edge detection
                     let loc = event.location();
                     cursor_x.store(loc.x.to_bits(), Ordering::Relaxed);
                     cursor_y.store(loc.y.to_bits(), Ordering::Relaxed);

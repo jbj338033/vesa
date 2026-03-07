@@ -3,8 +3,6 @@ use vesa_event::{Axis, ButtonState, InputEvent, KeyState, Position};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Message {
     Enter(Position),
-    /// Leave with normalized cursor y-ratio (0.0–1.0) so the returning side
-    /// can place the cursor at the correct vertical position on the return edge.
     Leave(f64),
     Ack(u32),
     PointerMotion {

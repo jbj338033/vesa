@@ -102,7 +102,6 @@ impl MacOSEmulate {
 
     fn emit_pointer_button(&mut self, button: u32, state: ButtonState) -> Result<(), EmulateError> {
         let pressed = matches!(state, ButtonState::Press);
-        // Linux evdev button codes: BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112
         let (event_type, cg_button) = match button {
             0x110 => {
                 self.buttons_pressed[0] = pressed;

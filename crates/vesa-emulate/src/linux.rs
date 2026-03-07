@@ -11,11 +11,9 @@ pub struct LinuxEmulate {
 impl LinuxEmulate {
     pub fn new() -> Result<Self, EmulateError> {
         let mut keys = AttributeSet::<Key>::new();
-        // Mouse buttons
         keys.insert(Key::BTN_LEFT);
         keys.insert(Key::BTN_RIGHT);
         keys.insert(Key::BTN_MIDDLE);
-        // Keyboard keys (KEY_ESC=1 through KEY_MAX)
         for code in 1u16..=248 {
             keys.insert(Key::new(code));
         }
@@ -66,7 +64,6 @@ impl LinuxEmulate {
         }
 
         if !events.is_empty() {
-            // SYN_REPORT
             events.push(EvdevInputEvent::new(EventType::SYNCHRONIZATION, 0, 0));
             self.emit_events(&events)?;
         }

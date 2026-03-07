@@ -25,12 +25,10 @@ pub trait InputEmulate: Send + 'static {
     fn emit(&mut self, event: InputEvent) -> Result<(), EmulateError>;
     fn destroy(&mut self);
 
-    /// Returns the current emulated cursor position (x, y).
     fn cursor_position(&self) -> (f64, f64) {
         (0.0, 0.0)
     }
 
-    /// Returns the screen bounds (x, y, width, height).
     fn screen_bounds(&self) -> (f64, f64, f64, f64) {
         (0.0, 0.0, 1920.0, 1080.0)
     }

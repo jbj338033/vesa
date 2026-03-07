@@ -15,8 +15,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::{CaptureError, InputCapture};
 
-/// WM_MOUSEHWHEEL (horizontal scroll) — 0x020E.
-/// Defined here because some versions of the windows crate may not export it.
 const WM_MOUSEHWHEEL: u32 = 0x020E;
 
 fn current_time_ms() -> u32 {
@@ -27,77 +25,70 @@ fn current_time_ms() -> u32 {
         .as_millis() as u32
 }
 
-/// Map Windows virtual key code to evdev key code.
-/// This covers common keys; extend as needed.
 fn vk_to_evdev(vk: u32) -> u32 {
     match vk {
-        0x1B => 1, // VK_ESCAPE -> KEY_ESC
+        0x1B => 1,
         0x70..=0x87 => {
-            // VK_F1..VK_F24
-            let f = vk - 0x70; // 0-based F-key index
+            let f = vk - 0x70;
             match f {
-                0..=9 => 59 + f,     // F1(59)..F10(68)
-                10 => 87,            // F11
-                11 => 88,            // F12
-                _ => 183 + (f - 12), // F13+
+                0..=9 => 59 + f,
+                10 => 87,
+                11 => 88,
+                _ => 183 + (f - 12),
             }
         }
         0x30..=0x39 => {
-            // '0'-'9'
             let n = vk - 0x30;
-            if n == 0 { 11 } else { n + 1 } // KEY_1=2..KEY_9=10, KEY_0=11
+            if n == 0 { 11 } else { n + 1 }
         }
         0x41..=0x5A => {
-            // 'A'-'Z'
             let letter = vk - 0x41;
-            // evdev: A=30,B=48,C=46,D=32,E=18,F=33,G=34,H=35,I=23,J=36,K=37,L=38,
-            //        M=50,N=49,O=24,P=25,Q=16,R=19,S=31,T=20,U=22,V=47,W=17,X=45,Y=21,Z=44
             const MAP: [u32; 26] = [
                 30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, 25, 16, 19, 31, 20, 22,
                 47, 17, 45, 21, 44,
             ];
             MAP[letter as usize]
         }
-        0x08 => 14,  // VK_BACK -> KEY_BACKSPACE
-        0x09 => 15,  // VK_TAB -> KEY_TAB
-        0x0D => 28,  // VK_RETURN -> KEY_ENTER
-        0x20 => 57,  // VK_SPACE -> KEY_SPACE
-        0x10 => 42,  // VK_SHIFT -> KEY_LEFTSHIFT
-        0xA0 => 42,  // VK_LSHIFT -> KEY_LEFTSHIFT
-        0xA1 => 54,  // VK_RSHIFT -> KEY_RIGHTSHIFT
-        0x11 => 29,  // VK_CONTROL -> KEY_LEFTCTRL
-        0xA2 => 29,  // VK_LCONTROL -> KEY_LEFTCTRL
-        0xA3 => 97,  // VK_RCONTROL -> KEY_RIGHTCTRL
-        0x12 => 56,  // VK_MENU (Alt) -> KEY_LEFTALT
-        0xA4 => 56,  // VK_LMENU -> KEY_LEFTALT
-        0xA5 => 100, // VK_RMENU -> KEY_RIGHTALT
-        0x5B => 125, // VK_LWIN -> KEY_LEFTMETA
-        0x5C => 126, // VK_RWIN -> KEY_RIGHTMETA
-        0x14 => 58,  // VK_CAPITAL -> KEY_CAPSLOCK
-        0x25 => 105, // VK_LEFT -> KEY_LEFT
-        0x26 => 103, // VK_UP -> KEY_UP
-        0x27 => 106, // VK_RIGHT -> KEY_RIGHT
-        0x28 => 108, // VK_DOWN -> KEY_DOWN
-        0x2D => 110, // VK_INSERT -> KEY_INSERT
-        0x2E => 111, // VK_DELETE -> KEY_DELETE
-        0x24 => 102, // VK_HOME -> KEY_HOME
-        0x23 => 107, // VK_END -> KEY_END
-        0x21 => 104, // VK_PRIOR (PageUp) -> KEY_PAGEUP
-        0x22 => 109, // VK_NEXT (PageDown) -> KEY_PAGEDOWN
-        0x90 => 69,  // VK_NUMLOCK -> KEY_NUMLOCK
-        0x91 => 70,  // VK_SCROLL -> KEY_SCROLLLOCK
-        0xBA => 39,  // VK_OEM_1 (;:) -> KEY_SEMICOLON
-        0xBB => 13,  // VK_OEM_PLUS (=+) -> KEY_EQUAL
-        0xBC => 51,  // VK_OEM_COMMA -> KEY_COMMA
-        0xBD => 12,  // VK_OEM_MINUS -> KEY_MINUS
-        0xBE => 52,  // VK_OEM_PERIOD -> KEY_DOT
-        0xBF => 53,  // VK_OEM_2 (/?) -> KEY_SLASH
-        0xC0 => 41,  // VK_OEM_3 (`~) -> KEY_GRAVE
-        0xDB => 26,  // VK_OEM_4 ([{) -> KEY_LEFTBRACE
-        0xDC => 43,  // VK_OEM_5 (\|) -> KEY_BACKSLASH
-        0xDD => 27,  // VK_OEM_6 (]}) -> KEY_RIGHTBRACE
-        0xDE => 40,  // VK_OEM_7 ('") -> KEY_APOSTROPHE
-        _ => vk,     // passthrough for unmapped keys
+        0x08 => 14,
+        0x09 => 15,
+        0x0D => 28,
+        0x20 => 57,
+        0x10 => 42,
+        0xA0 => 42,
+        0xA1 => 54,
+        0x11 => 29,
+        0xA2 => 29,
+        0xA3 => 97,
+        0x12 => 56,
+        0xA4 => 56,
+        0xA5 => 100,
+        0x5B => 125,
+        0x5C => 126,
+        0x14 => 58,
+        0x25 => 105,
+        0x26 => 103,
+        0x27 => 106,
+        0x28 => 108,
+        0x2D => 110,
+        0x2E => 111,
+        0x24 => 102,
+        0x23 => 107,
+        0x21 => 104,
+        0x22 => 109,
+        0x90 => 69,
+        0x91 => 70,
+        0xBA => 39,
+        0xBB => 13,
+        0xBC => 51,
+        0xBD => 12,
+        0xBE => 52,
+        0xBF => 53,
+        0xC0 => 41,
+        0xDB => 26,
+        0xDC => 43,
+        0xDD => 27,
+        0xDE => 40,
+        _ => vk,
     }
 }
 
@@ -117,14 +108,7 @@ unsafe extern "system" fn mouse_hook_proc(
         let msg = w_param.0 as u32;
 
         let event = match msg {
-            WM_MOUSEMOVE => {
-                // For low-level hooks, we get absolute coords.
-                // We compute delta from last position via a static.
-                // However, for KVM use, we send absolute as relative deltas
-                // from the hook's raw dx/dy. MSLLHOOKSTRUCT doesn't have dx/dy,
-                // so we track last position.
-                None // Handled below via last_pos tracking
-            }
+            WM_MOUSEMOVE => None,
             WM_LBUTTONDOWN => Some(InputEvent::PointerButton {
                 time,
                 button: 0x110,
@@ -200,7 +184,6 @@ unsafe extern "system" fn mouse_hook_proc(
             });
         }
 
-        // Handle mouse move separately with delta tracking
         if msg == WM_MOUSEMOVE {
             thread_local! {
                 static LAST_POS: std::cell::Cell<(i32, i32)> = const { std::cell::Cell::new((i32::MIN, i32::MIN)) };
@@ -226,11 +209,9 @@ unsafe extern "system" fn mouse_hook_proc(
                 last.set((info.pt.x, info.pt.y));
             });
 
-            // If capturing, warp cursor to center of primary monitor
             CAPTURING_FLAG.with(|f| {
                 if let Some(flag) = f.borrow().as_ref() {
                     if flag.load(Ordering::Relaxed) {
-                        // Warp to center of primary monitor (SM_CXSCREEN/SM_CYSCREEN)
                         unsafe {
                             use windows::Win32::UI::WindowsAndMessaging::{
                                 GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN, SetCursorPos,
@@ -331,7 +312,6 @@ impl InputCapture for WindowsCapture {
 
             tracing::info!("Windows input capture started");
 
-            // Message pump — required for low-level hooks
             let mut msg = MSG::default();
             unsafe {
                 while GetMessageW(&mut msg, None, 0, 0).as_bool() {

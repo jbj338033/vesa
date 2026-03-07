@@ -37,17 +37,14 @@ pub trait InputCapture: Send + 'static {
     fn stop(&mut self) -> Result<(), CaptureError>;
     fn set_capturing(&mut self, capturing: bool);
 
-    /// Returns the current cursor position (x, y) in screen coordinates.
     fn cursor_position(&self) -> (f64, f64) {
         (0.0, 0.0)
     }
 
-    /// Returns the primary screen bounds (x, y, width, height).
     fn screen_bounds(&self) -> (f64, f64, f64, f64) {
         (0.0, 0.0, 1920.0, 1080.0)
     }
 
-    /// Warp the cursor to the given screen coordinates.
     fn warp_cursor(&mut self, _x: f64, _y: f64) {}
 }
 

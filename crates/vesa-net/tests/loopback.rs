@@ -67,7 +67,6 @@ async fn datagram_input_events() {
             conn.send_datagram(msg).unwrap();
         }
 
-        // Small delay to ensure server receives before close
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         conn.close();
     });
@@ -120,7 +119,6 @@ async fn stream_enter_ack_leave() {
 
         stream.send(&Message::Leave(0.5)).await.unwrap();
 
-        // Wait for server to finish reading before closing
         done_rx.await.ok();
         conn.close();
     });
@@ -136,7 +134,6 @@ async fn stream_enter_ack_leave() {
     let leave = stream.recv().await.unwrap();
     assert_eq!(leave, Message::Leave(0.5));
 
-    // Signal client it's safe to close
     let _ = done_tx.send(());
 
     client_handle.await.unwrap();
@@ -216,7 +213,6 @@ async fn multiple_connections() {
     let server = VesaServer::bind(localhost(), &identity).unwrap();
     let server_addr = server.local_addr().unwrap();
 
-    // Connect two clients
     let c1 = tokio::spawn({
         let addr = server_addr;
         async move {
@@ -243,7 +239,6 @@ async fn multiple_connections() {
     let m1 = conn1.read_datagram().await.unwrap();
     let m2 = conn2.read_datagram().await.unwrap();
 
-    // One should be Ping, the other Pong (order may vary)
     assert!(
         (m1 == Message::Ping && m2 == Message::Pong)
             || (m1 == Message::Pong && m2 == Message::Ping)

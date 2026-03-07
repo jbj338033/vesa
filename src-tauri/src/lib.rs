@@ -19,7 +19,6 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            // 윈도우를 미리 생성 (숨김)
             let _window = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -31,7 +30,6 @@ pub fn run() {
             .visible(false)
             .build()?;
 
-            // 메뉴 없이 트레이 아이콘만 생성 — macOS에서 menu가 붙으면 클릭 이벤트가 시스템에 가로채임
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Vesa - Software KVM")

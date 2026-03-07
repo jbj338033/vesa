@@ -64,7 +64,6 @@ fn convert_evdev_event(ev: &evdev::InputEvent) -> Option<InputEvent> {
         },
         InputEventKind::Key(key) => {
             let code = key.0;
-            // Mouse buttons: BTN_LEFT(0x110)..BTN_TASK(0x117)
             if (0x110..=0x117).contains(&code) {
                 let state = if ev.value() == 0 {
                     ButtonState::Release
@@ -134,7 +133,6 @@ impl InputCapture for LinuxCapture {
                     break;
                 }
 
-                // Build poll fds
                 let mut poll_fds: Vec<PollFd> = devices
                     .iter()
                     .map(|d| {
@@ -146,9 +144,7 @@ impl InputCapture for LinuxCapture {
                     .collect();
 
                 match nix::poll::poll(&mut poll_fds, PollTimeout::from(100u16)) {
-                    Ok(0) => {
-                        // timeout — still check grab state below
-                    }
+                    Ok(0) => {}
                     Err(_) => continue,
                     Ok(_) => {
                         for (i, pfd) in poll_fds.iter().enumerate() {
@@ -167,7 +163,6 @@ impl InputCapture for LinuxCapture {
                     }
                 }
 
-                // Grab/ungrab only on state change
                 let should_grab = capturing.load(Ordering::Relaxed);
                 if should_grab && !grabbed {
                     for device in &mut devices {
@@ -182,7 +177,6 @@ impl InputCapture for LinuxCapture {
                 }
             }
 
-            // Ensure ungrab on exit
             if grabbed {
                 for device in &mut devices {
                     let _ = device.ungrab();
