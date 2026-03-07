@@ -66,7 +66,7 @@ pub async fn start_server(
     let config = ServerConfig {
         bind_addr: addr,
         clients: vec![],
-        release_hotkey: "ScrollLock".to_string(),
+        release_hotkey: "Escape".to_string(),
     };
 
     let cert_dir = config_dir().join("certs");
@@ -157,7 +157,6 @@ pub async fn get_clients(
 ) -> Result<Vec<ClientInfo>, String> {
     let mut s = state.lock().await;
 
-    // Check if client connection state has changed
     let connected_update = s
         .client_connected_rx
         .as_mut()

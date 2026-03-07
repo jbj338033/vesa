@@ -37,7 +37,7 @@ fn default_bind_addr() -> SocketAddr {
 }
 
 fn default_hotkey() -> String {
-    "ScrollLock".to_string()
+    "Escape".to_string()
 }
 
 impl VesaConfig {
@@ -105,7 +105,7 @@ server_addr = "10.0.0.1:4920"
         let config: VesaConfig = toml::from_str(toml).unwrap();
         let server = config.server.unwrap();
         assert_eq!(server.bind_addr.to_string(), "0.0.0.0:4920");
-        assert_eq!(server.release_hotkey, "ScrollLock");
+        assert_eq!(server.release_hotkey, "Escape");
         assert!(server.clients.is_empty());
     }
 
