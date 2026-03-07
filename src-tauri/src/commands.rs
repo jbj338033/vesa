@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{watch, Mutex};
+use tokio::task::JoinHandle;
 use vesa_core::config::{ClientConfig, ServerConfig};
 use vesa_core::{Client, Server};
 use vesa_event::Position;
@@ -20,6 +21,12 @@ pub struct ClientInfo {
     pub position: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StatusInfo {
+    pub mode: String,
+    pub error: Option<String>,
+}
+
 pub struct AppState {
     pub shutdown_tx: Option<watch::Sender<bool>>,
     pub mode: RunMode,
@@ -27,6 +34,7 @@ pub struct AppState {
     pub client_connected_rx: Option<watch::Receiver<bool>>,
     pub client_position: Position,
     pub client_connected: bool,
+    pub task_handle: Option<JoinHandle<Result<(), String>>>,
 }
 
 impl Default for AppState {
@@ -38,6 +46,7 @@ impl Default for AppState {
             client_connected_rx: None,
             client_position: Position::Right,
             client_connected: false,
+            task_handle: None,
         }
     }
 }
@@ -72,11 +81,17 @@ pub async fn start_server(
     let cert_dir = config_dir().join("certs");
     let mut server = Server::new(config, cert_dir, position_rx, client_connected_tx);
 
-    tokio::spawn(async move {
-        if let Err(e) = server.run(shutdown_rx).await {
-            tracing::error!("server error: {}", e);
-        }
+    let handle = tokio::spawn(async move {
+        server
+            .run(shutdown_rx)
+            .await
+            .map_err(|e| format!("server error: {e}"))
     });
+
+    {
+        let mut s = state.lock().await;
+        s.task_handle = Some(handle);
+    }
 
     Ok(())
 }
@@ -93,6 +108,7 @@ pub async fn stop_server(
     s.position_tx = None;
     s.client_connected_rx = None;
     s.client_connected = false;
+    s.task_handle = None;
     Ok(())
 }
 
@@ -117,11 +133,17 @@ pub async fn start_client(
 
     let mut client = Client::new(config);
 
-    tokio::spawn(async move {
-        if let Err(e) = client.run(shutdown_rx).await {
-            tracing::error!("client error: {}", e);
-        }
+    let handle = tokio::spawn(async move {
+        client
+            .run(shutdown_rx)
+            .await
+            .map_err(|e| format!("client error: {e}"))
     });
+
+    {
+        let mut s = state.lock().await;
+        s.task_handle = Some(handle);
+    }
 
     Ok(())
 }
@@ -135,20 +157,43 @@ pub async fn stop_client(
         let _ = tx.send(true);
     }
     s.mode = RunMode::Idle;
+    s.task_handle = None;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_status(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
-) -> Result<String, String> {
-    let s = state.lock().await;
-    let status = match s.mode {
+) -> Result<StatusInfo, String> {
+    let mut s = state.lock().await;
+
+    let mut task_error = None;
+    if let Some(handle) = &s.task_handle {
+        if handle.is_finished() {
+            if let Some(handle) = s.task_handle.take() {
+                match handle.await {
+                    Ok(Err(e)) => task_error = Some(e),
+                    Err(e) => task_error = Some(format!("task panicked: {e}")),
+                    Ok(Ok(())) => {}
+                }
+            }
+            s.mode = RunMode::Idle;
+            s.shutdown_tx = None;
+            s.position_tx = None;
+            s.client_connected_rx = None;
+            s.client_connected = false;
+        }
+    }
+
+    let mode = match s.mode {
         RunMode::Idle => "idle",
         RunMode::Server => "server",
         RunMode::Client => "client",
     };
-    Ok(status.to_string())
+    Ok(StatusInfo {
+        mode: mode.to_string(),
+        error: task_error,
+    })
 }
 
 #[tauri::command]
@@ -206,5 +251,7 @@ fn config_dir() -> PathBuf {
 }
 
 fn dirs_home() -> Option<String> {
-    std::env::var("HOME").ok()
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
 }
