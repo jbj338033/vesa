@@ -167,6 +167,19 @@ impl WindowsEmulate {
 }
 
 impl InputEmulate for WindowsEmulate {
+    fn cursor_position(&self) -> (f64, f64) {
+        (f64::from(self.mouse_x), f64::from(self.mouse_y))
+    }
+
+    fn screen_bounds(&self) -> (f64, f64, f64, f64) {
+        (
+            0.0,
+            0.0,
+            f64::from(self.screen_width),
+            f64::from(self.screen_height),
+        )
+    }
+
     fn emit(&mut self, event: InputEvent) -> Result<(), EmulateError> {
         match event {
             InputEvent::PointerMotion { dx, dy, .. } => self.emit_pointer_motion(dx, dy),

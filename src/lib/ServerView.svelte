@@ -12,8 +12,21 @@
   async function pollClients() {
     if (!running) return;
     try {
+      const status = await invoke<{ mode: string; error?: string }>("get_status");
+      if (status.mode === "idle" && running) {
+        running = false;
+        clients = [];
+        if (status.error) error = status.error;
+        return;
+      }
+    } catch (e) {
+      console.error("failed to get status:", e);
+    }
+    try {
       clients = await invoke("get_clients");
-    } catch {}
+    } catch (e) {
+      console.error("failed to get clients:", e);
+    }
   }
 
   $effect(() => {
