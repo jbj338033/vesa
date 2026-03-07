@@ -9,15 +9,17 @@
 
   onMount(async () => {
     try {
-      const status = await invoke<string>("get_status");
-      if (status === "server") {
+      const status = await invoke<{ mode: string; error?: string }>("get_status");
+      if (status.mode === "server") {
         mode = "server";
         active = true;
-      } else if (status === "client") {
+      } else if (status.mode === "client") {
         mode = "client";
         active = true;
       }
-    } catch {}
+    } catch (e) {
+      console.error("failed to get status:", e);
+    }
   });
 </script>
 

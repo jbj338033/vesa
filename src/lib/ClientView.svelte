@@ -4,6 +4,32 @@
   let serverAddr = $state("");
   let { connected = $bindable(false) }: { connected?: boolean } = $props();
   let error = $state("");
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function pollStatus() {
+    if (!connected) return;
+    try {
+      const status = await invoke<{ mode: string; error?: string }>("get_status");
+      if (status.mode === "idle" && connected) {
+        connected = false;
+        if (status.error) error = status.error;
+      }
+    } catch (e) {
+      console.error("failed to get status:", e);
+    }
+  }
+
+  $effect(() => {
+    if (connected) {
+      pollTimer = setInterval(pollStatus, 1000);
+    } else {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  });
 
   async function toggleConnection() {
     error = "";
