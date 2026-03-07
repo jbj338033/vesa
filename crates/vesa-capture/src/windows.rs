@@ -5,8 +5,10 @@ use tokio::sync::mpsc;
 use vesa_event::{Axis, ButtonState, InputEvent, KeyState};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::Foundation::POINT;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetMessageW, KBDLLHOOKSTRUCT, MSG, MSLLHOOKSTRUCT, PostThreadMessageW,
+    CallNextHookEx, GetCursorPos, GetMessageW, GetSystemMetrics, KBDLLHOOKSTRUCT, MSG,
+    MSLLHOOKSTRUCT, PostThreadMessageW, SM_CXSCREEN, SM_CYSCREEN, SetCursorPos,
     SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
     WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN,
@@ -213,9 +215,6 @@ unsafe extern "system" fn mouse_hook_proc(
                 if let Some(flag) = f.borrow().as_ref() {
                     if flag.load(Ordering::Relaxed) {
                         unsafe {
-                            use windows::Win32::UI::WindowsAndMessaging::{
-                                GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN, SetCursorPos,
-                            };
                             let cx = GetSystemMetrics(SM_CXSCREEN) / 2;
                             let cy = GetSystemMetrics(SM_CYSCREEN) / 2;
                             let _ = SetCursorPos(cx, cy);
@@ -356,5 +355,24 @@ impl InputCapture for WindowsCapture {
 
     fn set_capturing(&mut self, capturing: bool) {
         self.capturing.store(capturing, Ordering::Relaxed);
+    }
+
+    fn cursor_position(&self) -> (f64, f64) {
+        let mut pt = POINT::default();
+        unsafe {
+            let _ = GetCursorPos(&mut pt);
+        }
+        (f64::from(pt.x), f64::from(pt.y))
+    }
+
+    fn screen_bounds(&self) -> (f64, f64, f64, f64) {
+        let (w, h) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+        (0.0, 0.0, f64::from(w), f64::from(h))
+    }
+
+    fn warp_cursor(&mut self, x: f64, y: f64) {
+        unsafe {
+            let _ = SetCursorPos(x as i32, y as i32);
+        }
     }
 }
