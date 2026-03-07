@@ -92,7 +92,8 @@ impl VesaServer {
     fn transport_config() -> quinn::TransportConfig {
         let mut transport = quinn::TransportConfig::default();
         transport.max_idle_timeout(Some(
-            quinn::IdleTimeout::try_from(std::time::Duration::from_secs(30)).unwrap(),
+            quinn::IdleTimeout::try_from(std::time::Duration::from_secs(30))
+                .expect("30s is within valid idle timeout range"),
         ));
         transport.keep_alive_interval(Some(std::time::Duration::from_secs(5)));
         transport.datagram_receive_buffer_size(Some(65536));
