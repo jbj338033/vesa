@@ -48,6 +48,8 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Vesa ${{ github.ref_name }}
+          releaseBody: ""
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: false
+          generateReleaseNotes: true
