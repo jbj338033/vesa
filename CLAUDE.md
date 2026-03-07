@@ -6,7 +6,7 @@ Cross-platform software KVM in Rust. Shares keyboard and mouse across multiple c
 
 ```bash
 cargo build              # Build workspace crates
-cargo test               # Run all tests (43)
+cargo test               # Run all tests (55)
 cargo clippy             # Lint
 pnpm tauri dev           # Launch Tauri app (requires icon files: pnpm tauri icon)
 ```
@@ -57,7 +57,7 @@ Dependency direction: `event` ← `proto` ← `net` ← `core` ← `src-tauri`. 
 cargo test -p vesa-event   # 12 tests: type conversion roundtrips, serde
 cargo test -p vesa-proto   # 15 tests: protocol roundtrips, error cases, size verification
 cargo test -p vesa-net     # 8 tests: QUIC loopback (datagram + stream), certs, multi-connection
-cargo test -p vesa-core    # 8 tests: TOML config parsing, defaults, Position variants
+cargo test -p vesa-core    # 19 tests: TOML config parsing, defaults, Position variants, edge detection
 ```
 
 ## Dependencies

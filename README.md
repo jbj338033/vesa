@@ -44,7 +44,7 @@ Server Machine                              Client Machine
 2. Vesa captures all keyboard and mouse input on the server
 3. Input events are sent as QUIC datagrams (loss-tolerant, low-latency)
 4. The client injects the events using native OS APIs
-5. Press **ScrollLock** (configurable) to release capture
+5. Press **Escape** (configurable) to release capture
 
 ## Configuration
 
@@ -54,7 +54,7 @@ Vesa uses a TOML config file (`~/.config/vesa/config.toml`):
 # Server mode
 [server]
 bind_addr = "0.0.0.0:4920"
-release_hotkey = "ScrollLock"
+release_hotkey = "Escape"
 
 [[server.clients]]
 name = "laptop"
@@ -101,7 +101,7 @@ Dependencies flow left-to-right: `event` ← `proto` ← `net` ← `core` ← `t
 ## Testing
 
 ```bash
-cargo test               # Run all 43 tests
+cargo test               # Run all 55 tests
 cargo clippy             # Zero warnings
 ```
 
@@ -110,7 +110,7 @@ cargo clippy             # Zero warnings
 | vesa-event | 12 | Type conversions, serde roundtrips |
 | vesa-proto | 15 | Protocol encode/decode, error cases |
 | vesa-net | 8 | QUIC loopback, certs, multi-connection |
-| vesa-core | 8 | Config parsing, defaults, positions |
+| vesa-core | 19 | Config parsing, defaults, positions, edge detection |
 
 ## Tech Stack
 

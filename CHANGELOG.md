@@ -20,10 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Display Arrangement UI for drag-and-snap monitor placement
 - Windows and Linux platform stubs
 
-### Removed
-
-- CLI binary (`vesa-cli`) — Tauri app is the sole interface
-
 ### Fixed
 
 - Cursor hide/show now uses single API call instead of per-frame hack (GUI process)
