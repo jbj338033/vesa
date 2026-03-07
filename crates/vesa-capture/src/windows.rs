@@ -1,13 +1,13 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::sync::mpsc;
 use vesa_event::{Axis, ButtonState, InputEvent, KeyState};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetMessageW, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
-    KBDLLHOOKSTRUCT, MSG, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP,
+    CallNextHookEx, GetMessageW, KBDLLHOOKSTRUCT, MSG, MSLLHOOKSTRUCT, PostThreadMessageW,
+    SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
     WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN,
     WM_XBUTTONUP,
@@ -31,27 +31,30 @@ fn current_time_ms() -> u32 {
 /// This covers common keys; extend as needed.
 fn vk_to_evdev(vk: u32) -> u32 {
     match vk {
-        0x1B => 1,        // VK_ESCAPE -> KEY_ESC
-        0x70..=0x87 => {  // VK_F1..VK_F24
+        0x1B => 1, // VK_ESCAPE -> KEY_ESC
+        0x70..=0x87 => {
+            // VK_F1..VK_F24
             let f = vk - 0x70; // 0-based F-key index
             match f {
-                0..=9 => 59 + f,   // F1(59)..F10(68)
-                10 => 87,          // F11
-                11 => 88,          // F12
+                0..=9 => 59 + f,     // F1(59)..F10(68)
+                10 => 87,            // F11
+                11 => 88,            // F12
                 _ => 183 + (f - 12), // F13+
             }
         }
-        0x30..=0x39 => {  // '0'-'9'
+        0x30..=0x39 => {
+            // '0'-'9'
             let n = vk - 0x30;
             if n == 0 { 11 } else { n + 1 } // KEY_1=2..KEY_9=10, KEY_0=11
         }
-        0x41..=0x5A => {  // 'A'-'Z'
+        0x41..=0x5A => {
+            // 'A'-'Z'
             let letter = vk - 0x41;
             // evdev: A=30,B=48,C=46,D=32,E=18,F=33,G=34,H=35,I=23,J=36,K=37,L=38,
             //        M=50,N=49,O=24,P=25,Q=16,R=19,S=31,T=20,U=22,V=47,W=17,X=45,Y=21,Z=44
             const MAP: [u32; 26] = [
-                30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50,
-                49, 24, 25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44,
+                30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, 25, 16, 19, 31, 20, 22,
+                47, 17, 45, 21, 44,
             ];
             MAP[letter as usize]
         }
@@ -230,7 +233,7 @@ unsafe extern "system" fn mouse_hook_proc(
                         // Warp to center of primary monitor (SM_CXSCREEN/SM_CYSCREEN)
                         unsafe {
                             use windows::Win32::UI::WindowsAndMessaging::{
-                                GetSystemMetrics, SetCursorPos, SM_CXSCREEN, SM_CYSCREEN,
+                                GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN, SetCursorPos,
                             };
                             let cx = GetSystemMetrics(SM_CXSCREEN) / 2;
                             let cy = GetSystemMetrics(SM_CYSCREEN) / 2;
@@ -310,12 +313,10 @@ impl InputCapture for WindowsCapture {
                 *f.borrow_mut() = Some(capturing);
             });
 
-            let mouse_hook = unsafe {
-                SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook_proc), None, 0)
-            };
-            let keyboard_hook = unsafe {
-                SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), None, 0)
-            };
+            let mouse_hook =
+                unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook_proc), None, 0) };
+            let keyboard_hook =
+                unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), None, 0) };
 
             if mouse_hook.is_err() || keyboard_hook.is_err() {
                 tracing::error!("failed to install Windows hooks");
@@ -352,9 +353,7 @@ impl InputCapture for WindowsCapture {
             tracing::info!("Windows input capture stopped");
         });
 
-        let thread_id = tid_rx
-            .recv()
-            .map_err(|_| CaptureError::ThreadFailed)?;
+        let thread_id = tid_rx.recv().map_err(|_| CaptureError::ThreadFailed)?;
 
         self.thread_handle = Some(thread);
         self.thread_id = Some(thread_id);

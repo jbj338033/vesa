@@ -1,8 +1,8 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use core_foundation::base::TCFType;
-use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop, CFRunLoopRef};
+use core_foundation::runloop::{CFRunLoop, CFRunLoopRef, kCFRunLoopCommonModes};
 use core_graphics::display::CGDisplay;
 use core_graphics::event::{
     CGEvent, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventTapProxy,
@@ -36,8 +36,7 @@ fn check_accessibility() -> bool {
 
         let key = CFString::new("AXTrustedCheckOptionPrompt");
         let value = CFBoolean::true_value();
-        let options =
-            CFDictionary::from_CFType_pairs(&[(key, value.as_CFType())]);
+        let options = CFDictionary::from_CFType_pairs(&[(key, value.as_CFType())]);
         AXIsProcessTrustedWithOptions(options.as_CFTypeRef())
     }
 }
@@ -107,12 +106,10 @@ fn convert_event(event_type: CGEventType, event: &CGEvent) -> Option<InputEvent>
             })
         }
         CGEventType::ScrollWheel => {
-            let v = event.get_double_value_field(
-                EventField::SCROLL_WHEEL_EVENT_FIXED_POINT_DELTA_AXIS_1,
-            );
-            let h = event.get_double_value_field(
-                EventField::SCROLL_WHEEL_EVENT_FIXED_POINT_DELTA_AXIS_2,
-            );
+            let v = event
+                .get_double_value_field(EventField::SCROLL_WHEEL_EVENT_FIXED_POINT_DELTA_AXIS_1);
+            let h = event
+                .get_double_value_field(EventField::SCROLL_WHEEL_EVENT_FIXED_POINT_DELTA_AXIS_2);
 
             if v.abs() >= h.abs() {
                 Some(InputEvent::PointerAxis {
@@ -129,10 +126,8 @@ fn convert_event(event_type: CGEventType, event: &CGEvent) -> Option<InputEvent>
             }
         }
         CGEventType::KeyDown => {
-            let keycode =
-                event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE) as u32;
-            let autorepeat =
-                event.get_integer_value_field(EventField::KEYBOARD_EVENT_AUTOREPEAT);
+            let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE) as u32;
+            let autorepeat = event.get_integer_value_field(EventField::KEYBOARD_EVENT_AUTOREPEAT);
             let state = if autorepeat != 0 {
                 KeyState::Repeat
             } else {
@@ -145,8 +140,7 @@ fn convert_event(event_type: CGEventType, event: &CGEvent) -> Option<InputEvent>
             })
         }
         CGEventType::KeyUp => {
-            let keycode =
-                event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE) as u32;
+            let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE) as u32;
             Some(InputEvent::KeyboardKey {
                 time,
                 key: keycode,
@@ -339,12 +333,16 @@ impl InputCapture for MacOSCapture {
 
             self.capturing.store(true, Ordering::Relaxed);
             let _ = CGDisplay::associate_mouse_and_mouse_cursor_position(false);
-            unsafe { CGDisplayHideCursor(MAIN_DISPLAY); }
+            unsafe {
+                CGDisplayHideCursor(MAIN_DISPLAY);
+            }
             tracing::debug!("cursor warped to center, hidden, mouse disassociated");
         } else {
             self.capturing.store(false, Ordering::Relaxed);
             let _ = CGDisplay::associate_mouse_and_mouse_cursor_position(true);
-            unsafe { CGDisplayShowCursor(MAIN_DISPLAY); }
+            unsafe {
+                CGDisplayShowCursor(MAIN_DISPLAY);
+            }
             tracing::debug!("cursor shown, mouse reassociated");
         }
     }

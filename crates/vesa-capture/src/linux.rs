@@ -1,6 +1,6 @@
 use std::os::fd::AsRawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use evdev::{Device, EventType, InputEventKind, RelativeAxisType};
 use nix::poll::{PollFd, PollFlags, PollTimeout};

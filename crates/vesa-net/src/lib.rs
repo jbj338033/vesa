@@ -59,9 +59,7 @@ impl VesaServer {
     pub async fn accept(&self) -> Option<VesaConnection> {
         debug!("[net::server] waiting for incoming connection...");
         let incoming = self.endpoint.accept().await?;
-        debug!(
-            "[net::server] incoming connection received, performing handshake..."
-        );
+        debug!("[net::server] incoming connection received, performing handshake...");
         match incoming.await {
             Ok(conn) => {
                 info!(
@@ -161,7 +159,11 @@ impl VesaConnection {
     pub async fn read_datagram(&self) -> Result<Message, NetError> {
         let data = self.conn.read_datagram().await?;
         let msg = vesa_proto::decode(&data)?;
-        trace!("[net::conn] received datagram: {:?} ({} bytes)", msg, data.len());
+        trace!(
+            "[net::conn] received datagram: {:?} ({} bytes)",
+            msg,
+            data.len()
+        );
         Ok(msg)
     }
 
@@ -192,7 +194,10 @@ impl VesaConnection {
     }
 
     pub fn close(&self) {
-        debug!("[net::conn] closing connection to {}", self.conn.remote_address());
+        debug!(
+            "[net::conn] closing connection to {}",
+            self.conn.remote_address()
+        );
         self.conn.close(0u32.into(), b"done");
     }
 }
@@ -206,7 +211,11 @@ impl VesaStream {
     pub async fn send(&mut self, msg: &Message) -> Result<(), NetError> {
         let data = vesa_proto::encode(msg);
         let len = u8::try_from(data.len()).expect("message fits in u8");
-        debug!("[net::stream] sending message: {:?} ({} bytes)", msg, data.len());
+        debug!(
+            "[net::stream] sending message: {:?} ({} bytes)",
+            msg,
+            data.len()
+        );
         self.send.write_all(&[len]).await?;
         self.send.write_all(&data).await?;
         debug!("[net::stream] message sent successfully");

@@ -132,9 +132,8 @@ server_addr = "10.0.0.1:4920"
             ("Top", Position::Top),
             ("Bottom", Position::Bottom),
         ] {
-            let toml = format!(
-                "[server]\n[[server.clients]]\nname = \"test\"\nposition = \"{s}\"\n"
-            );
+            let toml =
+                format!("[server]\n[[server.clients]]\nname = \"test\"\nposition = \"{s}\"\n");
             let config: VesaConfig = toml::from_str(&toml).unwrap();
             assert_eq!(config.server.unwrap().clients[0].position, expected);
         }

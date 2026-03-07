@@ -44,17 +44,17 @@ impl Client {
         &self.state
     }
 
-    pub async fn run(
-        &mut self,
-        mut shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<(), ClientError> {
+    pub async fn run(&mut self, mut shutdown_rx: watch::Receiver<bool>) -> Result<(), ClientError> {
         info!("[client] starting, server_addr={}", self.config.server_addr);
 
         let bind_addr = "0.0.0.0:0".parse().unwrap();
         debug!("[client] connecting to server...");
         let conn = NetClient::connect(self.config.server_addr, bind_addr).await?;
         self.state = ClientState::Connected;
-        info!("[client] connected to server at {}", self.config.server_addr);
+        info!(
+            "[client] connected to server at {}",
+            self.config.server_addr
+        );
 
         debug!("[client] creating emulate backend...");
         let mut emulate = vesa_emulate::create_emulate()?;
@@ -92,7 +92,10 @@ impl Client {
                 pos
             }
             Ok(other) => {
-                warn!("[client] expected AssignPosition, got {:?} — using default", other);
+                warn!(
+                    "[client] expected AssignPosition, got {:?} — using default",
+                    other
+                );
                 DEFAULT_POSITION
             }
             Err(e) => {
@@ -109,7 +112,10 @@ impl Client {
         let mut return_direction = position.opposite();
         let mut edge_push_count: u32 = 0;
 
-        info!("[client] position={:?}, return_direction={:?}", position, return_direction);
+        info!(
+            "[client] position={:?}, return_direction={:?}",
+            position, return_direction
+        );
 
         loop {
             tokio::select! {
@@ -204,7 +210,10 @@ impl Client {
             }
         }
 
-        info!("[client] shutting down, total datagrams received: {}", datagram_count);
+        info!(
+            "[client] shutting down, total datagrams received: {}",
+            datagram_count
+        );
         emulate.destroy();
         conn.close();
         self.state = ClientState::Disconnected;

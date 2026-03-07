@@ -46,9 +46,21 @@ async fn datagram_input_events() {
         let conn = VesaClient::connect(server_addr, localhost()).await.unwrap();
 
         let msgs = [
-            Message::PointerMotion { time: 42, dx: 1.5, dy: -2.5 },
-            Message::KeyboardKey { time: 100, key: 30, state: 1 },
-            Message::PointerButton { time: 200, button: 272, state: 1 },
+            Message::PointerMotion {
+                time: 42,
+                dx: 1.5,
+                dy: -2.5,
+            },
+            Message::KeyboardKey {
+                time: 100,
+                key: 30,
+                state: 1,
+            },
+            Message::PointerButton {
+                time: 200,
+                button: 272,
+                state: 1,
+            },
         ];
 
         for msg in &msgs {
@@ -66,10 +78,24 @@ async fn datagram_input_events() {
     assert!(matches!(msg1, Message::PointerMotion { time: 42, .. }));
 
     let msg2 = server_conn.read_datagram().await.unwrap();
-    assert!(matches!(msg2, Message::KeyboardKey { time: 100, key: 30, state: 1 }));
+    assert!(matches!(
+        msg2,
+        Message::KeyboardKey {
+            time: 100,
+            key: 30,
+            state: 1
+        }
+    ));
 
     let msg3 = server_conn.read_datagram().await.unwrap();
-    assert!(matches!(msg3, Message::PointerButton { time: 200, button: 272, state: 1 }));
+    assert!(matches!(
+        msg3,
+        Message::PointerButton {
+            time: 200,
+            button: 272,
+            state: 1
+        }
+    ));
 
     client_handle.await.unwrap();
     server.close();

@@ -45,7 +45,8 @@ impl MacOSEmulate {
     }
 
     fn current_mouse_position() -> (f64, f64) {
-        let event = CGEvent::new(CGEventSource::new(CGEventSourceStateID::CombinedSessionState).unwrap());
+        let event =
+            CGEvent::new(CGEventSource::new(CGEventSourceStateID::CombinedSessionState).unwrap());
         match event {
             Ok(e) => {
                 let loc = e.location();

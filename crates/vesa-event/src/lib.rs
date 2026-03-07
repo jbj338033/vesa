@@ -154,7 +154,12 @@ mod tests {
 
     #[test]
     fn position_byte_roundtrip() {
-        for pos in [Position::Left, Position::Right, Position::Top, Position::Bottom] {
+        for pos in [
+            Position::Left,
+            Position::Right,
+            Position::Top,
+            Position::Bottom,
+        ] {
             assert_eq!(Position::from_byte(pos.to_byte()), Some(pos));
         }
     }
@@ -175,15 +180,26 @@ mod tests {
 
     #[test]
     fn position_opposite_is_involution() {
-        for pos in [Position::Left, Position::Right, Position::Top, Position::Bottom] {
+        for pos in [
+            Position::Left,
+            Position::Right,
+            Position::Top,
+            Position::Bottom,
+        ] {
             assert_eq!(pos.opposite().opposite(), pos);
         }
     }
 
     #[test]
     fn button_state_roundtrip() {
-        assert_eq!(ButtonState::from_u32(ButtonState::Press.to_u32()), Some(ButtonState::Press));
-        assert_eq!(ButtonState::from_u32(ButtonState::Release.to_u32()), Some(ButtonState::Release));
+        assert_eq!(
+            ButtonState::from_u32(ButtonState::Press.to_u32()),
+            Some(ButtonState::Press)
+        );
+        assert_eq!(
+            ButtonState::from_u32(ButtonState::Release.to_u32()),
+            Some(ButtonState::Release)
+        );
     }
 
     #[test]
@@ -208,7 +224,10 @@ mod tests {
     #[test]
     fn axis_roundtrip() {
         assert_eq!(Axis::from_u8(Axis::Vertical.to_u8()), Some(Axis::Vertical));
-        assert_eq!(Axis::from_u8(Axis::Horizontal.to_u8()), Some(Axis::Horizontal));
+        assert_eq!(
+            Axis::from_u8(Axis::Horizontal.to_u8()),
+            Some(Axis::Horizontal)
+        );
     }
 
     #[test]
@@ -225,7 +244,12 @@ mod tests {
 
     #[test]
     fn screen_bounds_serde() {
-        let bounds = ScreenBounds { x: -100, y: 0, width: 1920, height: 1080 };
+        let bounds = ScreenBounds {
+            x: -100,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
         let json = serde_json::to_string(&bounds).unwrap();
         let back: ScreenBounds = serde_json::from_str(&json).unwrap();
         assert_eq!(back.x, bounds.x);

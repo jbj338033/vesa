@@ -64,10 +64,7 @@ impl Server {
         &self.state
     }
 
-    pub async fn run(
-        &mut self,
-        mut shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<(), ServerError> {
+    pub async fn run(&mut self, mut shutdown_rx: watch::Receiver<bool>) -> Result<(), ServerError> {
         info!("[server] starting, bind_addr={}", self.config.bind_addr);
         debug!("[server] config: {:?}", self.config);
 
@@ -128,7 +125,10 @@ impl Server {
         shutdown_rx: &mut watch::Receiver<bool>,
     ) {
         let addr = conn.remote_address();
-        info!("[server::handle] waiting for bi-directional stream from {}...", addr);
+        info!(
+            "[server::handle] waiting for bi-directional stream from {}...",
+            addr
+        );
 
         let mut stream = match conn.accept_stream().await {
             Ok(s) => {
@@ -136,7 +136,10 @@ impl Server {
                 s
             }
             Err(e) => {
-                error!("[server::handle] FAILED to accept stream from {}: {}", addr, e);
+                error!(
+                    "[server::handle] FAILED to accept stream from {}: {}",
+                    addr, e
+                );
                 return;
             }
         };
@@ -160,7 +163,10 @@ impl Server {
 
         // Send AssignPosition after handshake
         let client_position = *self.position_rx.borrow();
-        info!("[server::handle] assigning position {:?} to client", client_position);
+        info!(
+            "[server::handle] assigning position {:?} to client",
+            client_position
+        );
         if let Err(e) = stream.send(&Message::AssignPosition(client_position)).await {
             warn!("[server::handle] failed to send AssignPosition: {}", e);
             return;
@@ -169,8 +175,14 @@ impl Server {
         // Notify UI that a client is connected
         let _ = self.client_connected_tx.send(true);
 
-        info!("[server::handle] stream established with {} — entering event loop", addr);
-        info!("[server::handle] client_position={:?}, edge_threshold={}", client_position, EDGE_PUSH_THRESHOLD);
+        info!(
+            "[server::handle] stream established with {} — entering event loop",
+            addr
+        );
+        info!(
+            "[server::handle] client_position={:?}, edge_threshold={}",
+            client_position, EDGE_PUSH_THRESHOLD
+        );
 
         let mut client_position = client_position;
         let mut edge_push_count: u32 = 0;
@@ -305,7 +317,10 @@ impl Server {
         capture: &mut Box<dyn vesa_capture::InputCapture>,
         stream: &mut VesaStream,
     ) {
-        info!("[server::capture] >>> ENTERING capture mode, target={:?}", target);
+        info!(
+            "[server::capture] >>> ENTERING capture mode, target={:?}",
+            target
+        );
         self.state = ServerState::Capturing { target };
         capture.set_capturing(true);
         debug!("[server::capture] set_capturing(true), sending Enter message...");
@@ -325,7 +340,10 @@ impl Server {
         stream: &mut VesaStream,
         y_ratio: f64,
     ) {
-        info!("[server::capture] <<< LEAVING capture mode, y_ratio={:.3}", y_ratio);
+        info!(
+            "[server::capture] <<< LEAVING capture mode, y_ratio={:.3}",
+            y_ratio
+        );
 
         // Compute the cursor warp position on the return edge BEFORE releasing capture
         let target = match &self.state {
